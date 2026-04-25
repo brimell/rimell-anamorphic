@@ -1,5 +1,7 @@
 #include "MetalRender.h"
 
+#include "Diagnostics.h"
+
 #import <Metal/Metal.h>
 
 #include <algorithm>
@@ -586,11 +588,16 @@ id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue) {
   id<MTLLibrary> library = [queue.device newLibraryWithSource:@(kernelSource) options:options error:&error];
   [options release];
   if (!library) {
+    logPrintf(LogLevel::Error,
+              "render.gpu",
+              "failed to compile metal library error=%s",
+              error ? [[error localizedDescription] UTF8String] : "(none)");
     return nil;
   }
 
   id<MTLFunction> function = [library newFunctionWithName:@"RimellAnamorphicKernel"];
   if (!function) {
+    logMessage(LogLevel::Error, "render.gpu", "failed to find RimellAnamorphicKernel function");
     [library release];
     return nil;
   }
@@ -598,6 +605,12 @@ id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue) {
   id<MTLComputePipelineState> pipeline = [queue.device newComputePipelineStateWithFunction:function error:&error];
   [function release];
   [library release];
+  if (!pipeline) {
+    logPrintf(LogLevel::Error,
+              "render.gpu",
+              "failed to build compute pipeline error=%s",
+              error ? [[error localizedDescription] UTF8String] : "(none)");
+  }
   if (pipeline) {
     pipelineCache[queue] = pipeline;
   }
@@ -608,21 +621,45 @@ id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue) {
 
 OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image &output,
                            const OfxRectI &renderWindow, const RenderParams &params) {
+  ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalFloat");
+  timer.setResult("in_progress");
+
   if (!commandQueue || !source.data || !output.data) {
+    logMessage(LogLevel::Error, "render.gpu", "invalid queue/source/output pointers");
+    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
     return kOfxStatGPURenderFailed;
   }
 
   id<MTLCommandQueue> queue = reinterpret_cast<id<MTLCommandQueue>>(commandQueue);
   id<MTLComputePipelineState> pipeline = pipelineForQueue(queue);
   if (!pipeline) {
+    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
     return kOfxStatGPURenderFailed;
   }
 
   const int width = source.bounds.x2 - source.bounds.x1;
   const int height = source.bounds.y2 - source.bounds.y1;
   if (width <= 0 || height <= 0) {
+    logPrintf(LogLevel::Error, "render.gpu", "invalid source bounds width=%d height=%d", width, height);
+    timer.setResult(ofxStatusToString(kOfxStatErrValue));
     return kOfxStatErrValue;
   }
+
+  logPrintf(LogLevel::Debug,
+            "render.gpu",
+            "dispatch source=[%d,%d,%d,%d] output=[%d,%d,%d,%d] window=[%d,%d,%d,%d]",
+            source.bounds.x1,
+            source.bounds.y1,
+            source.bounds.x2,
+            source.bounds.y2,
+            output.bounds.x1,
+            output.bounds.y1,
+            output.bounds.x2,
+            output.bounds.y2,
+            renderWindow.x1,
+            renderWindow.y1,
+            renderWindow.x2,
+            renderWindow.y2);
 
   MetalParams packedParams = packParams(params);
   MetalImageInfo info{
@@ -662,7 +699,16 @@ OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image 
   [commandBuffer commit];
   [commandBuffer waitUntilCompleted];
 
-  return commandBuffer.status == MTLCommandBufferStatusError ? kOfxStatGPURenderFailed : kOfxStatOK;
+  const bool failed = commandBuffer.status == MTLCommandBufferStatusError;
+  if (failed) {
+    logPrintf(LogLevel::Error,
+              "render.gpu",
+              "command buffer failed error=%s",
+              commandBuffer.error ? [[commandBuffer.error localizedDescription] UTF8String] : "(none)");
+  }
+  const OfxStatus status = failed ? kOfxStatGPURenderFailed : kOfxStatOK;
+  timer.setResult(ofxStatusToString(status));
+  return status;
 }
 
 } // namespace rimell

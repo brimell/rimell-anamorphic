@@ -1,6 +1,7 @@
 #include "Render.h"
 
 #include "Constants.h"
+#include "Diagnostics.h"
 #include "HostSuites.h"
 #include "LensMap.h"
 #include "MetalRender.h"
@@ -12,8 +13,11 @@
 #include "ofxPixels.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <exception>
 #include <string>
 
 namespace rimell {
@@ -481,13 +485,22 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
 template <typename T>
 OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const Image &output,
                       const OfxRectI &renderWindow, const RenderParams &params,
-                      const DepthImage *depth) {
+                      const DepthImage *depth, const char *pixelTag) {
   const int width = source.bounds.x2 - source.bounds.x1;
   const int height = source.bounds.y2 - source.bounds.y1;
   const bool bypass = params.mix <= 0.0001f;
+  const auto started = std::chrono::steady_clock::now();
+  std::uint64_t pixelsWritten = 0;
+  bool aborted = false;
 
   for (int y = renderWindow.y1; y < renderWindow.y2; ++y) {
     if (gEffectSuite->abort(instance)) {
+      aborted = true;
+      logPrintf(LogLevel::Warn,
+                "render.cpu",
+                "abort requested pixelType=%s row=%d",
+                pixelTag ? pixelTag : "unknown",
+                y);
       return kOfxStatOK;
     }
 
@@ -518,8 +531,29 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
                                      static_cast<float>(y - source.bounds.y1), width, height, params);
       color = composeFinalPixel(original, color, params);
       writePixelTyped(dst, color);
+      ++pixelsWritten;
     }
   }
+
+  const auto elapsed = std::chrono::steady_clock::now() - started;
+  const double elapsedMs =
+      std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(elapsed).count();
+  const double elapsedSec = elapsedMs > 0.0 ? elapsedMs / 1000.0 : 0.0;
+  const double megaPixelsPerSec = elapsedSec > 0.0 ?
+      (static_cast<double>(pixelsWritten) / 1000000.0) / elapsedSec : 0.0;
+  const LogLevel perfLevel = elapsedMs >= slowMsThreshold() ? LogLevel::Warn : LogLevel::Debug;
+  logPrintf(perfLevel,
+            "render.cpu",
+            "renderTyped pixelType=%s window=[%d,%d,%d,%d] pixels=%llu elapsed=%.3fms throughput=%.2fMPix/s aborted=%d",
+            pixelTag ? pixelTag : "unknown",
+            renderWindow.x1,
+            renderWindow.y1,
+            renderWindow.x2,
+            renderWindow.y2,
+            static_cast<unsigned long long>(pixelsWritten),
+            elapsedMs,
+            megaPixelsPerSec,
+            aborted ? 1 : 0);
 
   return kOfxStatOK;
 }
@@ -603,20 +637,37 @@ float roiPaddingPixels(const RenderParams &params) {
 } // namespace
 
 OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
+  ScopedLogTimer renderTimer(LogLevel::Info, "render", "render");
+  renderTimer.setResult("in_progress");
+
   OfxTime time = 0.0;
   OfxRectI renderWindow{};
+  const char *stage = "read_in_args";
   if (gPropertySuite->propGetDouble(inArgs, kOfxPropTime, 0, &time) != kOfxStatOK ||
       gPropertySuite->propGetIntN(inArgs, kOfxImageEffectPropRenderWindow, 4, &renderWindow.x1) != kOfxStatOK) {
+    logMessage(LogLevel::Error, "render", "failed to read render time/window");
+    renderTimer.setResult("failed_read_in_args");
     return kOfxStatFailed;
   }
+  logPrintf(LogLevel::Debug,
+            "render",
+            "start time=%.3f window=[%d,%d,%d,%d]",
+            time,
+            renderWindow.x1,
+            renderWindow.y1,
+            renderWindow.x2,
+            renderWindow.y2);
 
   OfxImageClipHandle sourceClip = nullptr;
   OfxImageClipHandle depthClip = nullptr;
   OfxImageClipHandle outputClip = nullptr;
+  stage = "get_clips";
   if (gEffectSuite->clipGetHandle(instance, kOfxImageEffectSimpleSourceClipName, &sourceClip, nullptr) !=
           kOfxStatOK ||
       gEffectSuite->clipGetHandle(instance, kOfxImageEffectOutputClipName, &outputClip, nullptr) != kOfxStatOK ||
       !sourceClip || !outputClip) {
+    logMessage(LogLevel::Error, "render", "failed to acquire source/output clips");
+    renderTimer.setResult("failed_get_clips");
     return kOfxStatErrBadHandle;
   }
   gEffectSuite->clipGetHandle(instance, kDepthClipName, &depthClip, nullptr);
@@ -631,16 +682,25 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
   OfxStatus status = kOfxStatOK;
 
   try {
+    stage = "fetch_output";
     if (!fetchImage(outputClip, time, &outputImageHandle, &output)) {
       status = gEffectSuite->abort(instance) ? kOfxStatOK : kOfxStatFailed;
+      logPrintf(LogLevel::Error,
+                "render",
+                "failed to fetch output image abort=%d status=%s",
+                gEffectSuite->abort(instance) ? 1 : 0,
+                ofxStatusToString(status));
     } else {
       char *outputBitDepth = nullptr;
       char *outputComponents = nullptr;
+      stage = "validate_output";
       if (!getImageString(outputImageHandle, kOfxImageEffectPropPixelDepth, &outputBitDepth) ||
           !getImageString(outputImageHandle, kOfxImageEffectPropComponents, &outputComponents) ||
           !stringsMatch(outputComponents, kOfxImageComponentRGBA)) {
         status = kOfxStatErrUnsupported;
+        logMessage(LogLevel::Error, "render", "unsupported output format/components");
       } else {
+        stage = "fetch_source";
         const bool hasSource = fetchImage(sourceClip, time, &sourceImageHandle, &source);
         char *sourceBitDepth = nullptr;
         char *sourceComponents = nullptr;
@@ -650,8 +710,19 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
              !stringsMatch(sourceBitDepth, outputBitDepth) ||
              !stringsMatch(sourceComponents, kOfxImageComponentRGBA))) {
           status = kOfxStatErrUnsupported;
+          logMessage(LogLevel::Error, "render", "source/output clip format mismatch");
         } else {
+          stage = "read_params";
           RenderParams params = readParams(instance);
+          logPrintf(LogLevel::Debug,
+                    "render",
+                    "params mix=%.3f quality=%d depthEnabled=%d lensIdentity=%d",
+                    params.mix,
+                    params.renderQuality,
+                    params.depthMapEnabled,
+                    params.lensIdentity);
+
+          stage = "fetch_depth";
           bool hasDepth =
               params.depthMapEnabled != 0 && depthClip && fetchImage(depthClip, time, &depthImageHandle, &depth);
           char *depthBitDepth = nullptr;
@@ -662,51 +733,73 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 !parseDepthBitDepth(depthBitDepth, &depthImage.bitDepth) ||
                 !parseDepthComponents(depthComponents, &depthImage.components)) {
               hasDepth = false;
+              logMessage(LogLevel::Warn, "render", "depth clip present but format unsupported, depth disabled");
             } else {
               depthImage.image = &depth;
             }
           }
           {
+            stage = "dispatch_render";
             if (hasSource) {
               params.edgeCropScale = automaticEdgeCropScale(source, source.bounds.x2 - source.bounds.x1,
                                                            source.bounds.y2 - source.bounds.y1, params);
             }
             void *metalCommandQueue = nullptr;
             const bool useMetal = hasSource && !hasDepth && metalEnabled(inArgs, &metalCommandQueue);
+            logPrintf(LogLevel::Info,
+                      "render",
+                      "render path source=%d depth=%d metal=%d outputBitDepth=%s",
+                      hasSource ? 1 : 0,
+                      hasDepth ? 1 : 0,
+                      useMetal ? 1 : 0,
+                      outputBitDepth ? outputBitDepth : "(null)");
             if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
+              ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalFloat");
+              timer.setResult("in_progress");
               status = renderMetalFloat(metalCommandQueue, source, output, renderWindow, params);
+              timer.setResult(ofxStatusToString(status));
             } else if (useMetal) {
               status = kOfxStatGPURenderFailed;
+              logMessage(LogLevel::Error, "render", "metal is enabled but output is not float RGBA");
             } else if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
               if (hasSource) {
                 status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params,
-                                                     hasDepth ? &depthImage : nullptr);
+                                                     hasDepth ? &depthImage : nullptr, "byte");
               } else {
                 fillEmptyTyped<OfxRGBAColourB>(output, renderWindow);
               }
             } else if (std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0) {
               if (hasSource) {
                 status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params,
-                                                     hasDepth ? &depthImage : nullptr);
+                                                     hasDepth ? &depthImage : nullptr, "short");
               } else {
                 fillEmptyTyped<OfxRGBAColourS>(output, renderWindow);
               }
             } else if (std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
               if (hasSource) {
                 status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params,
-                                                     hasDepth ? &depthImage : nullptr);
+                                                     hasDepth ? &depthImage : nullptr, "float");
               } else {
                 fillEmptyTyped<OfxRGBAColourF>(output, renderWindow);
               }
             } else {
               status = kOfxStatErrUnsupported;
+              logMessage(LogLevel::Error, "render", "unsupported output bit depth");
             }
           }
         }
       }
     }
+  } catch (const std::exception &ex) {
+    status = kOfxStatErrUnknown;
+    logPrintf(LogLevel::Error,
+              "render",
+              "exception stage=%s what=%s",
+              stage,
+              ex.what());
   } catch (...) {
     status = kOfxStatErrUnknown;
+    logPrintf(LogLevel::Error, "render", "unknown exception stage=%s", stage);
   }
 
   if (sourceImageHandle) {
@@ -718,6 +811,9 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
   if (outputImageHandle) {
     gEffectSuite->clipReleaseImage(outputImageHandle);
   }
+
+  renderTimer.setResult(ofxStatusToString(status));
+  logPrintf(LogLevel::Info, "render", "end status=%s (%d)", ofxStatusToString(status), status);
   return status;
 }
 

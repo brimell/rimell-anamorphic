@@ -1,5 +1,6 @@
 #include "Constants.h"
 #include "Describe.h"
+#include "Diagnostics.h"
 #include "HostSuites.h"
 #include "Render.h"
 
@@ -24,6 +25,7 @@ namespace {
 
 OfxStatus onLoad() {
   if (!gHost) {
+    logMessage(LogLevel::Error, "plugin.load", "host is null");
     return kOfxStatErrMissingHostFeature;
   }
 
@@ -35,61 +37,124 @@ OfxStatus onLoad() {
       static_cast<const OfxParameterSuiteV1 *>(gHost->fetchSuite(gHost->host, kOfxParameterSuite, 1)));
 
   if (!gEffectSuite || !gPropertySuite || !gParameterSuite) {
+    logMessage(LogLevel::Error, "plugin.load", "required suites missing");
     return kOfxStatErrMissingHostFeature;
   }
+
+  logMessage(LogLevel::Info, "plugin.load", "suites loaded successfully");
 
   return kOfxStatOK;
 }
 
 OfxStatus pluginMain(const char *action, const void *handle, OfxPropertySetHandle inArgs,
                      OfxPropertySetHandle outArgs) {
+  const char *actionName = action ? action : "(null)";
+  ScopedLogTimer actionTimer(LogLevel::Debug, "plugin.main", actionName);
+  actionTimer.setResult("in_progress");
+  const char *stage = "dispatch";
+
   try {
     auto effect = static_cast<OfxImageEffectHandle>(const_cast<void *>(handle));
+    logPrintf(LogLevel::Trace, "plugin.main", "action=%s", actionName);
+    if (!action) {
+      logMessage(LogLevel::Error, "plugin.main", "received null action");
+      actionTimer.setResult(ofxStatusToString(kOfxStatReplyDefault));
+      return kOfxStatReplyDefault;
+    }
 
     if (std::strcmp(action, kOfxActionLoad) == 0) {
-      return onLoad();
+      stage = "load";
+      const OfxStatus status = onLoad();
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
     }
     if (std::strcmp(action, kOfxActionUnload) == 0) {
+      stage = "unload";
       gEffectSuite = nullptr;
       gPropertySuite = nullptr;
       gParameterSuite = nullptr;
+      logMessage(LogLevel::Info, "plugin.unload", "suites cleared");
+      actionTimer.setResult(ofxStatusToString(kOfxStatOK));
       return kOfxStatOK;
     }
     if (std::strcmp(action, kOfxActionDescribe) == 0) {
-      return describe(effect);
+      stage = "describe";
+      const OfxStatus status = describe(effect);
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
     }
     if (std::strcmp(action, kOfxImageEffectActionDescribeInContext) == 0) {
-      return describeInContext(effect);
+      stage = "describe_in_context";
+      const OfxStatus status = describeInContext(effect);
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
     }
     if (std::strcmp(action, kOfxActionCreateInstance) == 0 ||
         std::strcmp(action, kOfxActionDestroyInstance) == 0 ||
         std::strcmp(action, kOfxImageEffectActionBeginSequenceRender) == 0 ||
         std::strcmp(action, kOfxImageEffectActionEndSequenceRender) == 0) {
+      stage = "lifecycle_noop";
+      actionTimer.setResult(ofxStatusToString(kOfxStatOK));
       return kOfxStatOK;
     }
     if (std::strcmp(action, kOfxImageEffectActionIsIdentity) == 0) {
-      return isIdentity(effect, inArgs, outArgs);
+      stage = "is_identity";
+      const OfxStatus status = isIdentity(effect, inArgs, outArgs);
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
     }
     if (std::strcmp(action, kOfxImageEffectActionGetRegionOfDefinition) == 0) {
-      return getRegionOfDefinition(effect, inArgs, outArgs);
+      stage = "get_rod";
+      const OfxStatus status = getRegionOfDefinition(effect, inArgs, outArgs);
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
     }
     if (std::strcmp(action, kOfxImageEffectActionGetRegionsOfInterest) == 0) {
-      return getRegionsOfInterest(effect, inArgs, outArgs);
+      stage = "get_roi";
+      const OfxStatus status = getRegionsOfInterest(effect, inArgs, outArgs);
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
     }
     if (std::strcmp(action, kOfxImageEffectActionGetClipPreferences) == 0) {
-      return getClipPreferences(effect, outArgs);
+      stage = "get_clip_preferences";
+      const OfxStatus status = getClipPreferences(effect, outArgs);
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
     }
     if (std::strcmp(action, kOfxImageEffectActionRender) == 0) {
-      return render(effect, inArgs);
+      stage = "render";
+      const OfxStatus status = render(effect, inArgs);
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
     }
   } catch (const std::bad_alloc &) {
+    logPrintf(LogLevel::Error,
+              "plugin.main",
+              "bad_alloc stage=%s action=%s",
+              stage,
+              actionName);
+    actionTimer.setResult(ofxStatusToString(kOfxStatErrMemory));
     return kOfxStatErrMemory;
-  } catch (const std::exception &) {
+  } catch (const std::exception &ex) {
+    logPrintf(LogLevel::Error,
+              "plugin.main",
+              "std::exception stage=%s action=%s what=%s",
+              stage,
+              actionName,
+              ex.what());
+    actionTimer.setResult(ofxStatusToString(kOfxStatErrUnknown));
     return kOfxStatErrUnknown;
   } catch (...) {
+    logPrintf(LogLevel::Error,
+              "plugin.main",
+              "unknown exception stage=%s action=%s",
+              stage,
+              actionName);
+    actionTimer.setResult(ofxStatusToString(kOfxStatErrUnknown));
     return kOfxStatErrUnknown;
   }
 
+  actionTimer.setResult(ofxStatusToString(kOfxStatReplyDefault));
   return kOfxStatReplyDefault;
 }
 

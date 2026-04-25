@@ -40,6 +40,7 @@ set(OFX_CONTENTS_DIR "${OFX_BUNDLE_ROOT}/Contents")
 set(OFX_BINARY_DIR "${OFX_CONTENTS_DIR}/${OFX_ARCH_DIR}")
 
 add_library(${OFX_PLUGIN_NAME} MODULE
+  src/Diagnostics.cpp
   src/Describe.cpp
   src/HostSuites.cpp
   src/LensMap.cpp
