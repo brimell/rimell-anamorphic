@@ -47,6 +47,7 @@ RenderParams readParams(OfxImageEffectHandle effect) {
 
   RenderParams params;
   params.mix = static_cast<float>(getDoubleParam(paramSet, "mix", params.mix));
+  params.renderQuality = std::max(0, std::min(2, getIntParam(paramSet, "renderQuality", params.renderQuality)));
   params.squeezeMode = getIntParam(paramSet, "squeezeMode", params.squeezeMode);
   params.squeezeRatio = static_cast<float>(getDoubleParam(paramSet, "squeezeRatio", params.squeezeRatio));
   params.horizontalFovBoost =
@@ -129,7 +130,8 @@ RenderParams readParams(OfxImageEffectHandle effect) {
 
   params.lateralCA = static_cast<float>(getDoubleParam(paramSet, "lateralCA", params.lateralCA));
   params.longitudinalCA =
-      static_cast<float>(getDoubleParam(paramSet, "longitudinalCA", params.longitudinalCA));
+      std::max(0.0f, std::min(1.0f, static_cast<float>(
+                                        getDoubleParam(paramSet, "longitudinalCA", params.longitudinalCA))));
   params.edgeOnlyCA = static_cast<float>(getIntParam(paramSet, "edgeOnlyCA", static_cast<int>(params.edgeOnlyCA)));
   params.lateralCAPixelScale =
       static_cast<float>(getDoubleParam(paramSet, "lateralCAPixelScale", params.lateralCAPixelScale));

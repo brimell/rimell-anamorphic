@@ -42,18 +42,42 @@ OfxStatus onLoad() {
 }
 
 OfxStatus pluginMain(const char *action, const void *handle, OfxPropertySetHandle inArgs,
-                     OfxPropertySetHandle /*outArgs*/) {
+                     OfxPropertySetHandle outArgs) {
   try {
     auto effect = static_cast<OfxImageEffectHandle>(const_cast<void *>(handle));
 
     if (std::strcmp(action, kOfxActionLoad) == 0) {
       return onLoad();
     }
+    if (std::strcmp(action, kOfxActionUnload) == 0) {
+      gEffectSuite = nullptr;
+      gPropertySuite = nullptr;
+      gParameterSuite = nullptr;
+      return kOfxStatOK;
+    }
     if (std::strcmp(action, kOfxActionDescribe) == 0) {
       return describe(effect);
     }
     if (std::strcmp(action, kOfxImageEffectActionDescribeInContext) == 0) {
       return describeInContext(effect);
+    }
+    if (std::strcmp(action, kOfxActionCreateInstance) == 0 ||
+        std::strcmp(action, kOfxActionDestroyInstance) == 0 ||
+        std::strcmp(action, kOfxImageEffectActionBeginSequenceRender) == 0 ||
+        std::strcmp(action, kOfxImageEffectActionEndSequenceRender) == 0) {
+      return kOfxStatOK;
+    }
+    if (std::strcmp(action, kOfxImageEffectActionIsIdentity) == 0) {
+      return isIdentity(effect, inArgs, outArgs);
+    }
+    if (std::strcmp(action, kOfxImageEffectActionGetRegionOfDefinition) == 0) {
+      return getRegionOfDefinition(effect, inArgs, outArgs);
+    }
+    if (std::strcmp(action, kOfxImageEffectActionGetRegionsOfInterest) == 0) {
+      return getRegionsOfInterest(effect, inArgs, outArgs);
+    }
+    if (std::strcmp(action, kOfxImageEffectActionGetClipPreferences) == 0) {
+      return getClipPreferences(effect, outArgs);
     }
     if (std::strcmp(action, kOfxImageEffectActionRender) == 0) {
       return render(effect, inArgs);

@@ -25,6 +25,7 @@ struct Image {
 
 struct RenderParams {
   float mix = 1.0f;
+  int renderQuality = 1;
   int squeezeMode = 2;
   float squeezeRatio = 1.33f;
   float horizontalFovBoost = 0.0f;

@@ -38,6 +38,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   gEffectSuite->getParamSet(effect, &paramSet);
 
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
+  addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, "Draft", "Preview", "Final",
+                 nullptr, "Scales expensive flare, bloom, blur, and chromatic sampling.");
 
   addChoiceParam(paramSet, "squeezeMode", "Squeeze Mode", 2, "Off", "Squeeze", "Desqueeze",
                  nullptr, "Squeeze simulates capture compression; desqueeze stretches horizontally.");
@@ -101,7 +103,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "lateralCA", "Lateral CA", 0.03, 0.0, 1.0, 0.0, 0.6,
                  "1.0 is approximately four pixels of edge separation.");
   addDoubleParam(paramSet, "longitudinalCA", "Longitudinal CA", 0.0, 0.0, 1.0, 0.0, 0.3,
-                 "Reserved for a future warped-coordinate implementation.");
+                 "Adds focus-dependent red/blue channel softness around high-contrast edges.");
   addBooleanParam(paramSet, "edgeOnlyCA", "Edge Only CA", 1);
   addDoubleParam(paramSet, "lateralCAPixelScale", "Lateral CA Pixel Scale", 4.0, 0.0, 32.0, 0.0, 12.0);
 

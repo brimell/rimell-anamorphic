@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 
 namespace rimell {
 namespace {
@@ -59,6 +60,50 @@ Pixel warpedSourceSample(const Image &source, float dstX, float dstY, int width,
   return sampleBilinear<T>(source, sx, sy);
 }
 
+float qualityScale(const RenderParams &params) {
+  switch (params.renderQuality) {
+  case 0:
+    return 0.5f;
+  case 2:
+    return 1.5f;
+  default:
+    return 1.0f;
+  }
+}
+
+template <typename T>
+Pixel channelDefocusSample(const Image &source, float x, float y, int width, int height,
+                           const RenderParams &params, float radiusPixels) {
+  if (radiusPixels <= 0.05f) {
+    return warpedSourceSample<T>(source, x, y, width, height, params, 0.0f);
+  }
+
+  const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
+  const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
+  float dx = x - cx;
+  float dy = y - cy;
+  const float length = std::sqrt(dx * dx + dy * dy);
+  if (length > 0.0001f) {
+    dx /= length;
+    dy /= length;
+  } else {
+    dx = 1.0f;
+    dy = 0.0f;
+  }
+
+  const Pixel center = warpedSourceSample<T>(source, x, y, width, height, params, 0.0f);
+  const Pixel outward = warpedSourceSample<T>(source, x + dx * radiusPixels, y + dy * radiusPixels, width,
+                                             height, params, 0.0f);
+  const Pixel inward = warpedSourceSample<T>(source, x - dx * radiusPixels, y - dy * radiusPixels, width,
+                                            height, params, 0.0f);
+  Pixel result{};
+  result.r = center.r * 0.5f + (outward.r + inward.r) * 0.25f;
+  result.g = center.g * 0.5f + (outward.g + inward.g) * 0.25f;
+  result.b = center.b * 0.5f + (outward.b + inward.b) * 0.25f;
+  result.a = center.a;
+  return result;
+}
+
 template <typename T>
 Pixel opticalBaseSample(const Image &source, float x, float y, int width, int height,
                         const RenderParams &params) {
@@ -70,6 +115,21 @@ Pixel opticalBaseSample(const Image &source, float x, float y, int width, int he
   Pixel blue = warpedSourceSample<T>(source, x, y, width, height, params, -caNormalised);
   base.r = red.r;
   base.b = blue.b;
+
+  if (params.longitudinalCA > 0.001f) {
+    const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
+    const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
+    const float nx = (x - cx) / std::max(1.0f, width * 0.5f);
+    const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
+    const float edge = smoothstep(0.15f, 1.05f, std::sqrt(nx * nx + ny * ny));
+    const float focusBias = 0.35f + std::abs(params.focusDistance - 0.5f) * 1.3f;
+    const float radiusPixels = params.longitudinalCA * focusBias * edge * 3.0f;
+    const Pixel redDefocus = channelDefocusSample<T>(source, x, y, width, height, params, radiusPixels);
+    const Pixel blueDefocus = channelDefocusSample<T>(source, x, y, width, height, params, radiusPixels * 0.65f);
+    const float amount = clamp01(params.longitudinalCA * (0.35f + edge * 0.65f));
+    base.r = lerp(base.r, redDefocus.r, amount);
+    base.b = lerp(base.b, blueDefocus.b, amount);
+  }
 
   return base;
 }
@@ -91,8 +151,9 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
   if (blurRadius > 0.05f) {
     Pixel blur{};
     float weight = 0.0f;
-    for (int i = -3; i <= 3; ++i) {
-      const float t = static_cast<float>(i) / 3.0f;
+    const int blurSamples = params.renderQuality == 0 ? 2 : (params.renderQuality == 2 ? 4 : 3);
+    for (int i = -blurSamples; i <= blurSamples; ++i) {
+      const float t = static_cast<float>(i) / static_cast<float>(blurSamples);
       const float w = 1.0f - std::abs(t) * 0.55f;
       const Pixel sample = warpedSourceSample<T>(source, x + t * blurRadius, y + t * blurRadius * 0.25f, width,
                                                  height, params, 0.0f);
@@ -113,8 +174,9 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
   if (smearRadius > 0.05f) {
     Pixel smear{};
     float weight = 0.0f;
-    for (int i = -4; i <= 4; ++i) {
-      const float t = static_cast<float>(i) / 4.0f;
+    const int smearSamples = params.renderQuality == 0 ? 2 : (params.renderQuality == 2 ? 5 : 4);
+    for (int i = -smearSamples; i <= smearSamples; ++i) {
+      const float t = static_cast<float>(i) / static_cast<float>(smearSamples);
       const float w = 1.0f - std::abs(t) * 0.7f;
       const Pixel sample = warpedSourceSample<T>(source, x + t * smearRadius, y, width, height, params, 0.0f);
       smear.r += sample.r * w;
@@ -156,7 +218,9 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
   const float flareAngle = params.flareAngle * kPi / 180.0f;
   const float dirX = std::cos(flareAngle);
   const float dirY = std::sin(flareAngle);
-  const int flareSteps = std::max(2, static_cast<int>(2.0f + params.flareLength * params.flareStepDensity));
+  const float sampleScale = qualityScale(params);
+  const int flareSteps =
+      std::max(1, static_cast<int>(std::round((2.0f + params.flareLength * params.flareStepDensity) * sampleScale)));
   const float flareSpan = params.flareLength * static_cast<float>(width) * params.flareSpanScale;
   if (params.flareIntensity > 0.001f && flareSpan > 1.0f) {
     for (int i = -flareSteps; i <= flareSteps; ++i) {
@@ -180,8 +244,9 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
     const float cosR = std::cos(rotation);
     const float sinR = std::sin(rotation);
     const float stretch = 1.0f + params.bokehStretch * params.bokehStretchScale;
-    const int rings = std::max(1, params.bloomRings);
-    const int samplesPerRing = std::max(3, params.bloomSamplesPerRing);
+    const int rings = std::max(1, static_cast<int>(std::round(static_cast<float>(params.bloomRings) * sampleScale)));
+    const int samplesPerRing =
+        std::max(3, static_cast<int>(std::round(static_cast<float>(params.bloomSamplesPerRing) * sampleScale)));
     float total = 0.0f;
     Pixel bloom{};
     for (int ring = 1; ring <= rings; ++ring) {
@@ -227,7 +292,9 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
     const float tintShift = params.coatingStyle == 0
                                 ? params.coatingWarmResponse
                                 : (params.coatingStyle == 2 ? params.coatingCoolResponse : 1.0f);
-    for (int i = 1; i <= params.ghostCount; ++i) {
+    const int ghostCount =
+        params.renderQuality == 0 ? std::min(params.ghostCount, 3) : (params.renderQuality == 2 ? params.ghostCount : std::min(params.ghostCount, 6));
+    for (int i = 1; i <= ghostCount; ++i) {
       const float scale = 1.0f + params.ghostSpread * static_cast<float>(i);
       const float sx = cx - (x - cx) * scale;
       const float sy = cy - (y - cy) * scale;
@@ -364,6 +431,18 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
   return kOfxStatOK;
 }
 
+template <typename T>
+void fillEmptyTyped(const Image &output, const OfxRectI &renderWindow) {
+  for (int y = renderWindow.y1; y < renderWindow.y2; ++y) {
+    for (int x = renderWindow.x1; x < renderWindow.x2; ++x) {
+      T *dst = pixelAddress<T>(output, x, y);
+      if (dst) {
+        writePixelTyped(dst, {});
+      }
+    }
+  }
+}
+
 bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *imageHandle, Image *image) {
   if (!clip || !imageHandle || !image) {
     return false;
@@ -388,6 +467,23 @@ bool getImageString(OfxPropertySetHandle imageHandle, const char *property, char
 
 bool stringsMatch(const char *a, const char *b) {
   return a && b && std::strcmp(a, b) == 0;
+}
+
+std::string clipPropertyName(const char *prefix, const char *clipName) {
+  std::string name(prefix);
+  name += clipName;
+  return name;
+}
+
+float roiPaddingPixels(const RenderParams &params) {
+  const float flarePadding = params.flareIntensity > 0.001f ? params.flareLength * params.flareSpanScale * 512.0f : 0.0f;
+  const float bloomPadding = (params.veil > 0.001f || params.highlightCream > 0.001f)
+                                 ? params.bloomRadius * params.bloomPixelScale
+                                 : 0.0f;
+  const float edgePadding = std::max(params.edgeBlur * params.edgeBlurPixels,
+                                     (params.tangentialSmear + params.horizontalSmear) * params.smearPixels);
+  const float chromaticPadding = params.lateralCA * params.lateralCAPixelScale + params.longitudinalCA * 3.0f;
+  return std::max({flarePadding, bloomPadding, edgePadding, chromaticPadding, 2.0f});
 }
 
 } // namespace
@@ -416,33 +512,49 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
   OfxStatus status = kOfxStatOK;
 
   try {
-    if (!fetchImage(sourceClip, time, &sourceImageHandle, &source) ||
-        !fetchImage(outputClip, time, &outputImageHandle, &output)) {
+    if (!fetchImage(outputClip, time, &outputImageHandle, &output)) {
       status = gEffectSuite->abort(instance) ? kOfxStatOK : kOfxStatFailed;
     } else {
-      char *sourceBitDepth = nullptr;
       char *outputBitDepth = nullptr;
-      char *sourceComponents = nullptr;
       char *outputComponents = nullptr;
-      if (!getImageString(sourceImageHandle, kOfxImageEffectPropPixelDepth, &sourceBitDepth) ||
-          !getImageString(outputImageHandle, kOfxImageEffectPropPixelDepth, &outputBitDepth) ||
-          !getImageString(sourceImageHandle, kOfxImageEffectPropComponents, &sourceComponents) ||
+      if (!getImageString(outputImageHandle, kOfxImageEffectPropPixelDepth, &outputBitDepth) ||
           !getImageString(outputImageHandle, kOfxImageEffectPropComponents, &outputComponents) ||
-          !stringsMatch(sourceBitDepth, outputBitDepth) ||
-          !stringsMatch(sourceComponents, kOfxImageComponentRGBA) ||
           !stringsMatch(outputComponents, kOfxImageComponentRGBA)) {
         status = kOfxStatErrUnsupported;
       } else {
-        const RenderParams params = readParams(instance);
-
-        if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
-          status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params);
-        } else if (std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0) {
-          status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params);
-        } else if (std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
-          status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params);
-        } else {
+        const bool hasSource = fetchImage(sourceClip, time, &sourceImageHandle, &source);
+        char *sourceBitDepth = nullptr;
+        char *sourceComponents = nullptr;
+        if (hasSource &&
+            (!getImageString(sourceImageHandle, kOfxImageEffectPropPixelDepth, &sourceBitDepth) ||
+             !getImageString(sourceImageHandle, kOfxImageEffectPropComponents, &sourceComponents) ||
+             !stringsMatch(sourceBitDepth, outputBitDepth) ||
+             !stringsMatch(sourceComponents, kOfxImageComponentRGBA))) {
           status = kOfxStatErrUnsupported;
+        } else {
+          const RenderParams params = readParams(instance);
+
+          if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
+            if (hasSource) {
+              status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params);
+            } else {
+              fillEmptyTyped<OfxRGBAColourB>(output, renderWindow);
+            }
+          } else if (std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0) {
+            if (hasSource) {
+              status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params);
+            } else {
+              fillEmptyTyped<OfxRGBAColourS>(output, renderWindow);
+            }
+          } else if (std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
+            if (hasSource) {
+              status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params);
+            } else {
+              fillEmptyTyped<OfxRGBAColourF>(output, renderWindow);
+            }
+          } else {
+            status = kOfxStatErrUnsupported;
+          }
         }
       }
     }
@@ -457,6 +569,90 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
     gEffectSuite->clipReleaseImage(outputImageHandle);
   }
   return status;
+}
+
+OfxStatus isIdentity(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs,
+                     OfxPropertySetHandle outArgs) {
+  if (!outArgs) {
+    return kOfxStatReplyDefault;
+  }
+
+  const RenderParams params = readParams(instance);
+  if (params.mix > 0.0001f) {
+    return kOfxStatReplyDefault;
+  }
+
+  OfxTime time = 0.0;
+  gPropertySuite->propGetDouble(inArgs, kOfxPropTime, 0, &time);
+  gPropertySuite->propSetString(outArgs, kOfxPropName, 0, kOfxImageEffectSimpleSourceClipName);
+  gPropertySuite->propSetDouble(outArgs, kOfxPropTime, 0, time);
+  return kOfxStatOK;
+}
+
+OfxStatus getRegionOfDefinition(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs,
+                                OfxPropertySetHandle outArgs) {
+  if (!outArgs) {
+    return kOfxStatReplyDefault;
+  }
+
+  OfxImageClipHandle sourceClip = nullptr;
+  if (gEffectSuite->clipGetHandle(instance, kOfxImageEffectSimpleSourceClipName, &sourceClip, nullptr) !=
+          kOfxStatOK ||
+      !sourceClip) {
+    return kOfxStatReplyDefault;
+  }
+
+  OfxTime time = 0.0;
+  gPropertySuite->propGetDouble(inArgs, kOfxPropTime, 0, &time);
+  OfxRectD sourceRod{};
+  if (gEffectSuite->clipGetRegionOfDefinition(sourceClip, time, &sourceRod) != kOfxStatOK) {
+    return kOfxStatReplyDefault;
+  }
+
+  gPropertySuite->propSetDoubleN(outArgs, kOfxImageEffectPropRegionOfDefinition, 4, &sourceRod.x1);
+  return kOfxStatOK;
+}
+
+OfxStatus getRegionsOfInterest(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs,
+                               OfxPropertySetHandle outArgs) {
+  if (!outArgs) {
+    return kOfxStatReplyDefault;
+  }
+
+  double roi[4] = {};
+  if (gPropertySuite->propGetDoubleN(inArgs, kOfxImageEffectPropRegionOfInterest, 4, roi) != kOfxStatOK) {
+    return kOfxStatReplyDefault;
+  }
+
+  const RenderParams params = readParams(instance);
+  const double padding = static_cast<double>(roiPaddingPixels(params));
+  roi[0] -= padding;
+  roi[1] -= padding;
+  roi[2] += padding;
+  roi[3] += padding;
+
+  const std::string sourceRoi =
+      clipPropertyName("OfxImageClipPropRoI_", kOfxImageEffectSimpleSourceClipName);
+  gPropertySuite->propSetDoubleN(outArgs, sourceRoi.c_str(), 4, roi);
+  return kOfxStatOK;
+}
+
+OfxStatus getClipPreferences(OfxImageEffectHandle /*instance*/, OfxPropertySetHandle outArgs) {
+  if (!outArgs) {
+    return kOfxStatReplyDefault;
+  }
+
+  const std::string outputComponents =
+      clipPropertyName("OfxImageClipPropComponents_", kOfxImageEffectOutputClipName);
+  const std::string sourceComponents =
+      clipPropertyName("OfxImageClipPropComponents_", kOfxImageEffectSimpleSourceClipName);
+  gPropertySuite->propSetString(outArgs, outputComponents.c_str(), 0, kOfxImageComponentRGBA);
+  gPropertySuite->propSetString(outArgs, sourceComponents.c_str(), 0, kOfxImageComponentRGBA);
+  gPropertySuite->propSetString(outArgs, kOfxImageEffectPropPreMultiplication, 0,
+                                kOfxImageUnPreMultiplied);
+  gPropertySuite->propSetInt(outArgs, kOfxImageClipPropContinuousSamples, 0, 0);
+  gPropertySuite->propSetInt(outArgs, kOfxImageEffectFrameVarying, 0, 0);
+  return kOfxStatOK;
 }
 
 } // namespace rimell
