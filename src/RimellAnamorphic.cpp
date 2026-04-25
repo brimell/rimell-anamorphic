@@ -540,8 +540,8 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
     for (int i = -3; i <= 3; ++i) {
       const float t = static_cast<float>(i) / 3.0f;
       const float w = 1.0f - std::abs(t) * 0.55f;
-      const Pixel sample = opticalBaseSample<T>(source, x + t * blurRadius, y + t * blurRadius * 0.25f, width,
-                                                height, params);
+      const Pixel sample = warpedSourceSample<T>(source, x + t * blurRadius, y + t * blurRadius * 0.25f, width,
+                                                 height, params, 0.0f);
       blur.r += sample.r * w;
       blur.g += sample.g * w;
       blur.b += sample.b * w;
@@ -562,7 +562,7 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
     for (int i = -4; i <= 4; ++i) {
       const float t = static_cast<float>(i) / 4.0f;
       const float w = 1.0f - std::abs(t) * 0.7f;
-      const Pixel sample = opticalBaseSample<T>(source, x + t * smearRadius, y, width, height, params);
+      const Pixel sample = warpedSourceSample<T>(source, x + t * smearRadius, y, width, height, params, 0.0f);
       smear.r += sample.r * w;
       smear.g += sample.g * w;
       smear.b += sample.b * w;
@@ -577,8 +577,8 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
   }
 
   if (params.verticalSharpness > 0.001f) {
-    const Pixel up = opticalBaseSample<T>(source, x, y - 1.5f, width, height, params);
-    const Pixel down = opticalBaseSample<T>(source, x, y + 1.5f, width, height, params);
+    const Pixel up = warpedSourceSample<T>(source, x, y - 1.5f, width, height, params, 0.0f);
+    const Pixel down = warpedSourceSample<T>(source, x, y + 1.5f, width, height, params, 0.0f);
     const float sharpen = params.verticalSharpness * (1.0f - edge * 0.5f);
     result.g = clamp01(result.g + (result.g - (up.g + down.g) * 0.5f) * sharpen);
     result.r = clamp01(result.r + (result.r - (up.r + down.r) * 0.5f) * sharpen * 0.5f);
