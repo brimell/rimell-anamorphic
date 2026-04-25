@@ -11,7 +11,7 @@ namespace rimell {
 namespace {
 
 struct LogConfig {
-  LogLevel level = LogLevel::Warn;
+  LogLevel level = LogLevel::Trace;
   double slowMs = 12.0;
   FILE *stream = stderr;
   bool ownsStream = false;
@@ -20,35 +20,6 @@ struct LogConfig {
 std::once_flag gConfigOnce;
 std::mutex gWriteMutex;
 LogConfig gConfig;
-
-LogLevel parseLogLevel(const char *value) {
-  if (!value || !*value) {
-    return LogLevel::Warn;
-  }
-
-  if (std::strcmp(value, "0") == 0 || std::strcmp(value, "error") == 0 ||
-      std::strcmp(value, "ERROR") == 0) {
-    return LogLevel::Error;
-  }
-  if (std::strcmp(value, "1") == 0 || std::strcmp(value, "warn") == 0 ||
-      std::strcmp(value, "WARN") == 0 || std::strcmp(value, "warning") == 0 ||
-      std::strcmp(value, "WARNING") == 0) {
-    return LogLevel::Warn;
-  }
-  if (std::strcmp(value, "2") == 0 || std::strcmp(value, "info") == 0 ||
-      std::strcmp(value, "INFO") == 0) {
-    return LogLevel::Info;
-  }
-  if (std::strcmp(value, "3") == 0 || std::strcmp(value, "debug") == 0 ||
-      std::strcmp(value, "DEBUG") == 0) {
-    return LogLevel::Debug;
-  }
-  if (std::strcmp(value, "4") == 0 || std::strcmp(value, "trace") == 0 ||
-      std::strcmp(value, "TRACE") == 0) {
-    return LogLevel::Trace;
-  }
-  return LogLevel::Warn;
-}
 
 const char *levelName(LogLevel level) {
   switch (level) {
@@ -67,11 +38,8 @@ const char *levelName(LogLevel level) {
 }
 
 void initLogConfig() {
-  const char *levelEnv = std::getenv("RIMELL_LOG_LEVEL");
-  if (!levelEnv) {
-    levelEnv = std::getenv("RIMELL_LOG");
-  }
-  gConfig.level = parseLogLevel(levelEnv);
+  // Always keep diagnostics at maximum verbosity for crash investigations.
+  gConfig.level = LogLevel::Trace;
 
   const char *slowEnv = std::getenv("RIMELL_LOG_SLOW_MS");
   if (slowEnv && *slowEnv) {
