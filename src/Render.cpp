@@ -540,8 +540,40 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
   const auto started = std::chrono::steady_clock::now();
   std::uint64_t pixelsWritten = 0;
   bool aborted = false;
+  const bool hasDepth = depth && depth->image && depth->image->data;
+  logPrintf(LogLevel::Debug,
+            "render.cpu",
+            "enter renderTyped pixelType=%s hasDepth=%d sourceData=%p sourceRowBytes=%d sourceBounds=[%d,%d,%d,%d] outputData=%p outputRowBytes=%d outputBounds=[%d,%d,%d,%d] depthData=%p depthRowBytes=%d depthBounds=[%d,%d,%d,%d]",
+            pixelTag ? pixelTag : "unknown",
+            hasDepth ? 1 : 0,
+            source.data,
+            source.rowBytes,
+            source.bounds.x1,
+            source.bounds.y1,
+            source.bounds.x2,
+            source.bounds.y2,
+            output.data,
+            output.rowBytes,
+            output.bounds.x1,
+            output.bounds.y1,
+            output.bounds.x2,
+            output.bounds.y2,
+            hasDepth ? depth->image->data : nullptr,
+            hasDepth ? depth->image->rowBytes : 0,
+            hasDepth ? depth->image->bounds.x1 : 0,
+            hasDepth ? depth->image->bounds.y1 : 0,
+            hasDepth ? depth->image->bounds.x2 : 0,
+            hasDepth ? depth->image->bounds.y2 : 0);
 
   for (int y = renderWindow.y1; y < renderWindow.y2; ++y) {
+    if (y == renderWindow.y1) {
+      logPrintf(LogLevel::Trace,
+                "render.cpu",
+                "row begin pixelType=%s y=%d/%d",
+                pixelTag ? pixelTag : "unknown",
+                y,
+                renderWindow.y2 - 1);
+    }
     if (gEffectSuite->abort(instance)) {
       aborted = true;
       logPrintf(LogLevel::Warn,
@@ -580,6 +612,14 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
       color = composeFinalPixel(original, color, params);
       writePixelTyped(dst, color);
       ++pixelsWritten;
+    }
+    if (y == renderWindow.y1) {
+      logPrintf(LogLevel::Trace,
+                "render.cpu",
+                "row end pixelType=%s y=%d pixelsWritten=%llu",
+                pixelTag ? pixelTag : "unknown",
+                y,
+                static_cast<unsigned long long>(pixelsWritten));
     }
   }
 
@@ -742,6 +782,13 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
     return kOfxStatErrBadHandle;
   }
   gEffectSuite->clipGetHandle(instance, kDepthClipName, &depthClip, nullptr);
+  logPrintf(LogLevel::Debug,
+            "render",
+            "clip handles source=%p output=%p depth=%p depthConnected=%d",
+            sourceClip,
+            outputClip,
+            depthClip,
+            clipConnected(depthClip) ? 1 : 0);
 
   OfxPropertySetHandle sourceImageHandle = nullptr;
   OfxPropertySetHandle depthImageHandle = nullptr;
@@ -811,8 +858,27 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                       params.lensIdentity);
 
             stage = "fetch_depth";
-            bool hasDepth = params.depthMapEnabled != 0 && depthClip && clipConnected(depthClip) &&
-                    fetchImage(depthClip, time, &depthImageHandle, &depth);
+            const bool depthRequested = params.depthMapEnabled != 0;
+            const bool depthClipAvailable = depthClip != nullptr;
+            const bool depthClipIsConnected = clipConnected(depthClip);
+            const bool depthImageFetched =
+              depthRequested && depthClipAvailable && depthClipIsConnected &&
+              fetchImage(depthClip, time, &depthImageHandle, &depth);
+            bool hasDepth = depthImageFetched;
+            logPrintf(LogLevel::Debug,
+                  "render",
+                  "depth preflight requested=%d clipAvailable=%d clipConnected=%d fetched=%d handle=%p data=%p rowBytes=%d bounds=[%d,%d,%d,%d]",
+                  depthRequested ? 1 : 0,
+                  depthClipAvailable ? 1 : 0,
+                  depthClipIsConnected ? 1 : 0,
+                  depthImageFetched ? 1 : 0,
+                  depthImageHandle,
+                  depth.data,
+                  depth.rowBytes,
+                  depth.bounds.x1,
+                  depth.bounds.y1,
+                  depth.bounds.x2,
+                  depth.bounds.y2);
             char *depthBitDepth = nullptr;
             char *depthComponents = nullptr;
             if (hasDepth) {
@@ -857,6 +923,12 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                   hasDepth = false;
                 } else {
                   logImageLayout(LogLevel::Debug, "render", "depth", depth, depthBpp, true);
+                  logPrintf(LogLevel::Debug,
+                            "render",
+                            "depth accepted bitDepth=%s components=%s bytesPerPixel=%d",
+                            depthBitDepth ? depthBitDepth : "(null)",
+                            depthComponents ? depthComponents : "(null)",
+                            depthBpp);
                   depthImage.image = &depth;
                 }
               }
@@ -886,6 +958,16 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 logMessage(LogLevel::Error, "render", "metal is enabled but output is not float RGBA");
               } else if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
                 if (hasSource) {
+                  logPrintf(LogLevel::Debug,
+                            "render",
+                            "dispatch cpu pixelType=byte hasDepth=%d sourceData=%p sourceRowBytes=%d outputData=%p outputRowBytes=%d depthData=%p depthRowBytes=%d",
+                            hasDepth ? 1 : 0,
+                            source.data,
+                            source.rowBytes,
+                            output.data,
+                            output.rowBytes,
+                            hasDepth ? depth.data : nullptr,
+                            hasDepth ? depth.rowBytes : 0);
                   status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params,
                                                        hasDepth ? &depthImage : nullptr, "byte");
                 } else {
@@ -893,6 +975,16 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 }
               } else if (std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0) {
                 if (hasSource) {
+                  logPrintf(LogLevel::Debug,
+                            "render",
+                            "dispatch cpu pixelType=short hasDepth=%d sourceData=%p sourceRowBytes=%d outputData=%p outputRowBytes=%d depthData=%p depthRowBytes=%d",
+                            hasDepth ? 1 : 0,
+                            source.data,
+                            source.rowBytes,
+                            output.data,
+                            output.rowBytes,
+                            hasDepth ? depth.data : nullptr,
+                            hasDepth ? depth.rowBytes : 0);
                   status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params,
                                                        hasDepth ? &depthImage : nullptr, "short");
                 } else {
@@ -900,6 +992,16 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 }
               } else if (std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
                 if (hasSource) {
+                  logPrintf(LogLevel::Debug,
+                            "render",
+                            "dispatch cpu pixelType=float hasDepth=%d sourceData=%p sourceRowBytes=%d outputData=%p outputRowBytes=%d depthData=%p depthRowBytes=%d",
+                            hasDepth ? 1 : 0,
+                            source.data,
+                            source.rowBytes,
+                            output.data,
+                            output.rowBytes,
+                            hasDepth ? depth.data : nullptr,
+                            hasDepth ? depth.rowBytes : 0);
                   status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params,
                                                        hasDepth ? &depthImage : nullptr, "float");
                 } else {
