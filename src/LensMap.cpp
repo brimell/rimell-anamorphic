@@ -123,7 +123,8 @@ LensMap buildLensMap(float dstX, float dstY, const Image &source, int width, int
   const float centerFeather = 0.2f;
   const float warpMask = smoothstep(centerRadius, centerRadius + centerFeather, map.radius);
   map.centerProtectionMask = 1.0f - warpMask;
-  map.transferAmount = clamp01(params.anamorphicTransfer) * warpMask;
+  const bool useUtilityGeometry = params.inputMode == 1 || params.inputMode == 2;
+  map.transferAmount = useUtilityGeometry ? 1.0f : clamp01(params.anamorphicTransfer) * warpMask;
   map.edgeMask = smoothstep(std::max(0.0f, params.edgeCompressionStart), 1.0f, std::abs(spherical.x));
 
   const float squeezeShape = 1.0f + safeSqueezeDelta(params) * (0.6f + lensIdentityAxisWarp(params) * 0.7f);
@@ -141,7 +142,6 @@ LensMap buildLensMap(float dstX, float dstY, const Image &source, int width, int
   Vec2 anamorphic{spherical.x * scaleX, spherical.y * scaleY};
   anamorphic.y *= 1.0f - params.verticalCompensation * axisRadius2 * params.verticalCompensationScale;
 
-  const bool useUtilityGeometry = params.inputMode == 1 || params.inputMode == 2;
   if (useUtilityGeometry) {
     const float ratio = std::max(0.1f, params.squeezeRatio);
     if (params.squeezeMode == 1) {
