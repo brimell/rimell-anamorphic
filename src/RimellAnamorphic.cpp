@@ -56,28 +56,28 @@ struct RenderParams {
   float horizontalFovBoost = 0.0f;
   float virtualFocalLength = 50.0f;
 
-  float bokehStretch = 0.5f;
+  float bokehStretch = 0.15f;
   float bokehRotation = 0.0f;
-  float bokehEdgeFalloff = 0.4f;
+  float bokehEdgeFalloff = 0.15f;
 
-  float flareIntensity = 0.25f;
+  float flareIntensity = 0.08f;
   float flareLength = 0.45f;
   Vec3 flareColour{0.35f, 0.75f, 1.0f};
   float flareThreshold = 0.82f;
   float flareAngle = 0.0f;
 
-  float veil = 0.08f;
-  float bloomRadius = 0.24f;
-  float highlightCream = 0.25f;
+  float veil = 0.03f;
+  float bloomRadius = 0.12f;
+  float highlightCream = 0.0f;
   float blackLiftProtection = 0.65f;
 
-  int ghostCount = 2;
+  int ghostCount = 0;
   float ghostSpread = 0.35f;
   Vec3 ghostTint{0.55f, 0.8f, 1.0f};
   int coatingStyle = 1;
 
-  float edgeBlur = 0.18f;
-  float tangentialSmear = 0.18f;
+  float edgeBlur = 0.05f;
+  float tangentialSmear = 0.03f;
   float radialFalloff = 0.65f;
 
   float barrel = 0.0f;
@@ -89,20 +89,20 @@ struct RenderParams {
   float focusDistance = 0.5f;
   float breathingAmount = 0.0f;
 
-  float lateralCA = 0.18f;
-  float longitudinalCA = 0.03f;
+  float lateralCA = 0.03f;
+  float longitudinalCA = 0.0f;
   float edgeOnlyCA = 1.0f;
 
-  float ovalVignette = 0.25f;
+  float ovalVignette = 0.05f;
   float vignetteAsymmetry = 0.0f;
   float cornerBias = 0.0f;
 
   float horizontalSmear = 0.1f;
   float verticalSharpness = 0.0f;
-  float fieldCurvature = 0.2f;
+  float fieldCurvature = 0.03f;
 
-  float catEyeStrength = 0.2f;
-  float bokehVignette = 0.2f;
+  float catEyeStrength = 0.0f;
+  float bokehVignette = 0.0f;
   float edgeCompression = 0.0f;
 
   int guidesEnabled = 0;
@@ -139,6 +139,10 @@ float smoothstep(float edge0, float edge1, float x) {
   }
   const float t = clamp01((x - edge0) / (edge1 - edge0));
   return t * t * (3.0f - 2.0f * t);
+}
+
+int clampCoord(int value, int minValue, int maxValue) {
+  return std::max(minValue, std::min(maxValue, value));
 }
 
 template <typename T>
@@ -210,21 +214,35 @@ void writePixelTyped<OfxRGBAColourF>(OfxRGBAColourF *pixel, const Pixel &value) 
 
 template <typename T>
 Pixel sampleNearest(const Image &image, float x, float y) {
-  return readPixelTyped(pixelAddress<T>(image, static_cast<int>(std::floor(x + 0.5f)),
-                                        static_cast<int>(std::floor(y + 0.5f))));
+  if (!image.data || image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2) {
+    return {};
+  }
+
+  const int ix = clampCoord(static_cast<int>(std::floor(x + 0.5f)), image.bounds.x1, image.bounds.x2 - 1);
+  const int iy = clampCoord(static_cast<int>(std::floor(y + 0.5f)), image.bounds.y1, image.bounds.y2 - 1);
+  return readPixelTyped(pixelAddress<T>(image, ix, iy));
 }
 
 template <typename T>
 Pixel sampleBilinear(const Image &image, float x, float y) {
+  if (!image.data || image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2) {
+    return {};
+  }
+
   const int x0 = static_cast<int>(std::floor(x));
   const int y0 = static_cast<int>(std::floor(y));
   const float tx = x - static_cast<float>(x0);
   const float ty = y - static_cast<float>(y0);
 
-  const Pixel p00 = readPixelTyped(pixelAddress<T>(image, x0, y0));
-  const Pixel p10 = readPixelTyped(pixelAddress<T>(image, x0 + 1, y0));
-  const Pixel p01 = readPixelTyped(pixelAddress<T>(image, x0, y0 + 1));
-  const Pixel p11 = readPixelTyped(pixelAddress<T>(image, x0 + 1, y0 + 1));
+  const int x0c = clampCoord(x0, image.bounds.x1, image.bounds.x2 - 1);
+  const int x1c = clampCoord(x0 + 1, image.bounds.x1, image.bounds.x2 - 1);
+  const int y0c = clampCoord(y0, image.bounds.y1, image.bounds.y2 - 1);
+  const int y1c = clampCoord(y0 + 1, image.bounds.y1, image.bounds.y2 - 1);
+
+  const Pixel p00 = readPixelTyped(pixelAddress<T>(image, x0c, y0c));
+  const Pixel p10 = readPixelTyped(pixelAddress<T>(image, x1c, y0c));
+  const Pixel p01 = readPixelTyped(pixelAddress<T>(image, x0c, y1c));
+  const Pixel p11 = readPixelTyped(pixelAddress<T>(image, x1c, y1c));
 
   const Pixel top = lerpPixel(p00, p10, tx);
   const Pixel bottom = lerpPixel(p01, p11, tx);
@@ -491,19 +509,14 @@ Pixel warpedSourceSample(const Image &source, float dstX, float dstY, int width,
 template <typename T>
 Pixel opticalBaseSample(const Image &source, float x, float y, int width, int height,
                         const RenderParams &params) {
-  const float caPixels = params.lateralCA * 8.0f / std::max(1.0f, static_cast<float>(width));
+  const float halfW = std::max(1.0f, static_cast<float>(width) * 0.5f);
+  const float caPixels = params.lateralCA * 4.0f;
+  const float caNormalised = caPixels / halfW;
   Pixel base = warpedSourceSample<T>(source, x, y, width, height, params, 0.0f);
-  Pixel red = warpedSourceSample<T>(source, x, y, width, height, params, caPixels);
-  Pixel blue = warpedSourceSample<T>(source, x, y, width, height, params, -caPixels);
+  Pixel red = warpedSourceSample<T>(source, x, y, width, height, params, caNormalised);
+  Pixel blue = warpedSourceSample<T>(source, x, y, width, height, params, -caNormalised);
   base.r = red.r;
   base.b = blue.b;
-
-  if (params.longitudinalCA > 0.001f) {
-    const float amount = params.longitudinalCA * 2.0f;
-    const Pixel soft = lerpPixel(sampleBilinear<T>(source, x - amount, y), sampleBilinear<T>(source, x + amount, y),
-                                 0.5f);
-    base.g = lerp(base.g, soft.g, params.longitudinalCA);
-  }
 
   return base;
 }
@@ -589,7 +602,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
   const float flareAngle = params.flareAngle * kPi / 180.0f;
   const float dirX = std::cos(flareAngle);
   const float dirY = std::sin(flareAngle);
-  const int flareSteps = std::max(4, static_cast<int>(12 + params.flareLength * 44.0f));
+  const int flareSteps = std::max(2, static_cast<int>(2 + params.flareLength * 6.0f));
   const float flareSpan = params.flareLength * static_cast<float>(width) * 0.75f;
   if (params.flareIntensity > 0.001f && flareSpan > 1.0f) {
     for (int i = -flareSteps; i <= flareSteps; ++i) {
@@ -613,8 +626,8 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
     const float cosR = std::cos(rotation);
     const float sinR = std::sin(rotation);
     const float stretch = 1.0f + params.bokehStretch * 2.2f;
-    const int rings = 3;
-    const int samplesPerRing = 10;
+    const int rings = 2;
+    const int samplesPerRing = 6;
     float total = 0.0f;
     Pixel bloom{};
     for (int ring = 1; ring <= rings; ++ring) {
@@ -751,6 +764,7 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
                       const OfxRectI &renderWindow, const RenderParams &params) {
   const int width = source.bounds.x2 - source.bounds.x1;
   const int height = source.bounds.y2 - source.bounds.y1;
+  const bool bypass = params.mix <= 0.0001f;
 
   for (int y = renderWindow.y1; y < renderWindow.y2; ++y) {
     if (gEffectSuite->abort(instance)) {
@@ -764,6 +778,11 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
       }
 
       const Pixel original = sampleNearest<T>(source, static_cast<float>(x), static_cast<float>(y));
+      if (bypass) {
+        writePixelTyped(dst, original);
+        continue;
+      }
+
       Pixel color = opticalBaseSample<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
                                          params);
       color = edgeCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, color,
@@ -785,26 +804,47 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
 }
 
 bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *imageHandle, Image *image) {
+  if (!clip || !imageHandle || !image) {
+    return false;
+  }
+
   if (gEffectSuite->clipGetImage(clip, time, nullptr, imageHandle) != kOfxStatOK || !*imageHandle) {
     return false;
   }
 
-  gPropertySuite->propGetPointer(*imageHandle, kOfxImagePropData, 0, &image->data);
-  gPropertySuite->propGetInt(*imageHandle, kOfxImagePropRowBytes, 0, &image->rowBytes);
-  gPropertySuite->propGetIntN(*imageHandle, kOfxImagePropBounds, 4, &image->bounds.x1);
+  if (gPropertySuite->propGetPointer(*imageHandle, kOfxImagePropData, 0, &image->data) != kOfxStatOK ||
+      gPropertySuite->propGetInt(*imageHandle, kOfxImagePropRowBytes, 0, &image->rowBytes) != kOfxStatOK ||
+      gPropertySuite->propGetIntN(*imageHandle, kOfxImagePropBounds, 4, &image->bounds.x1) != kOfxStatOK) {
+    return false;
+  }
   return image->data != nullptr;
+}
+
+bool getImageString(OfxPropertySetHandle imageHandle, const char *property, char **value) {
+  return imageHandle && value &&
+         gPropertySuite->propGetString(imageHandle, property, 0, value) == kOfxStatOK && *value != nullptr;
+}
+
+bool stringsMatch(const char *a, const char *b) {
+  return a && b && std::strcmp(a, b) == 0;
 }
 
 OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
   OfxTime time = 0.0;
   OfxRectI renderWindow{};
-  gPropertySuite->propGetDouble(inArgs, kOfxPropTime, 0, &time);
-  gPropertySuite->propGetIntN(inArgs, kOfxImageEffectPropRenderWindow, 4, &renderWindow.x1);
+  if (gPropertySuite->propGetDouble(inArgs, kOfxPropTime, 0, &time) != kOfxStatOK ||
+      gPropertySuite->propGetIntN(inArgs, kOfxImageEffectPropRenderWindow, 4, &renderWindow.x1) != kOfxStatOK) {
+    return kOfxStatFailed;
+  }
 
   OfxImageClipHandle sourceClip = nullptr;
   OfxImageClipHandle outputClip = nullptr;
-  gEffectSuite->clipGetHandle(instance, kOfxImageEffectSimpleSourceClipName, &sourceClip, nullptr);
-  gEffectSuite->clipGetHandle(instance, kOfxImageEffectOutputClipName, &outputClip, nullptr);
+  if (gEffectSuite->clipGetHandle(instance, kOfxImageEffectSimpleSourceClipName, &sourceClip, nullptr) !=
+          kOfxStatOK ||
+      gEffectSuite->clipGetHandle(instance, kOfxImageEffectOutputClipName, &outputClip, nullptr) != kOfxStatOK ||
+      !sourceClip || !outputClip) {
+    return kOfxStatErrBadHandle;
+  }
 
   OfxPropertySetHandle sourceImageHandle = nullptr;
   OfxPropertySetHandle outputImageHandle = nullptr;
@@ -817,18 +857,30 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
         !fetchImage(outputClip, time, &outputImageHandle, &output)) {
       status = gEffectSuite->abort(instance) ? kOfxStatOK : kOfxStatFailed;
     } else {
-      char *bitDepth = nullptr;
-      gPropertySuite->propGetString(outputImageHandle, kOfxImageEffectPropPixelDepth, 0, &bitDepth);
-      const RenderParams params = readParams(instance);
-
-      if (std::strcmp(bitDepth, kOfxBitDepthByte) == 0) {
-        status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params);
-      } else if (std::strcmp(bitDepth, kOfxBitDepthShort) == 0) {
-        status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params);
-      } else if (std::strcmp(bitDepth, kOfxBitDepthFloat) == 0) {
-        status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params);
-      } else {
+      char *sourceBitDepth = nullptr;
+      char *outputBitDepth = nullptr;
+      char *sourceComponents = nullptr;
+      char *outputComponents = nullptr;
+      if (!getImageString(sourceImageHandle, kOfxImageEffectPropPixelDepth, &sourceBitDepth) ||
+          !getImageString(outputImageHandle, kOfxImageEffectPropPixelDepth, &outputBitDepth) ||
+          !getImageString(sourceImageHandle, kOfxImageEffectPropComponents, &sourceComponents) ||
+          !getImageString(outputImageHandle, kOfxImageEffectPropComponents, &outputComponents) ||
+          !stringsMatch(sourceBitDepth, outputBitDepth) ||
+          !stringsMatch(sourceComponents, kOfxImageComponentRGBA) ||
+          !stringsMatch(outputComponents, kOfxImageComponentRGBA)) {
         status = kOfxStatErrUnsupported;
+      } else {
+        const RenderParams params = readParams(instance);
+
+        if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
+          status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params);
+        } else if (std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0) {
+          status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params);
+        } else if (std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
+          status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params);
+        } else {
+          status = kOfxStatErrUnsupported;
+        }
       }
     }
   } catch (...) {
@@ -884,28 +936,28 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "horizontalFovBoost", "Horizontal FOV Boost", 0.0, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "virtualFocalLength", "Virtual Focal Length", 50.0, 10.0, 200.0, 18.0, 100.0);
 
-  addDoubleParam(paramSet, "bokehStretch", "Bokeh Stretch", 0.5, 0.0, 1.0, 0.0, 1.0);
-  addDoubleParam(paramSet, "bokehRotation", "Bokeh Rotation", 0.0, -45.0, 45.0, -15.0, 15.0);
-  addDoubleParam(paramSet, "bokehEdgeFalloff", "Bokeh Edge Falloff", 0.4, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "bokehStretch", "Anamorphic Bloom Shape", 0.15, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "bokehRotation", "Bloom Shape Rotation", 0.0, -45.0, 45.0, -15.0, 15.0);
+  addDoubleParam(paramSet, "bokehEdgeFalloff", "Bloom Edge Falloff", 0.15, 0.0, 1.0, 0.0, 1.0);
 
-  addDoubleParam(paramSet, "flareIntensity", "Flare Intensity", 0.25, 0.0, 4.0, 0.0, 1.5);
+  addDoubleParam(paramSet, "flareIntensity", "Flare Intensity", 0.08, 0.0, 4.0, 0.0, 1.5);
   addDoubleParam(paramSet, "flareLength", "Flare Length", 0.45, 0.0, 1.0, 0.0, 1.0);
   addRGBParam(paramSet, "flareColour", "Flare Colour", {0.35f, 0.75f, 1.0f});
   addDoubleParam(paramSet, "flareThreshold", "Flare Threshold", 0.82, 0.0, 1.0, 0.4, 1.0);
   addDoubleParam(paramSet, "flareAngle", "Flare Angle", 0.0, -45.0, 45.0, -15.0, 15.0);
 
-  addDoubleParam(paramSet, "veil", "Veil", 0.08, 0.0, 1.0, 0.0, 0.5);
-  addDoubleParam(paramSet, "bloomRadius", "Bloom Radius", 0.24, 0.0, 1.0, 0.0, 0.7);
-  addDoubleParam(paramSet, "highlightCream", "Highlight Cream", 0.25, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "veil", "Veil", 0.03, 0.0, 1.0, 0.0, 0.5);
+  addDoubleParam(paramSet, "bloomRadius", "Bloom Radius", 0.12, 0.0, 1.0, 0.0, 0.7);
+  addDoubleParam(paramSet, "highlightCream", "Highlight Cream", 0.0, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "blackLiftProtection", "Black Lift Protection", 0.65, 0.0, 1.0, 0.0, 1.0);
 
-  addIntParam(paramSet, "ghostCount", "Ghost Count", 2, 0, 8);
+  addIntParam(paramSet, "ghostCount", "Ghost Count", 0, 0, 8);
   addDoubleParam(paramSet, "ghostSpread", "Ghost Spread", 0.35, 0.0, 1.0, 0.0, 1.0);
   addRGBParam(paramSet, "ghostTint", "Ghost Tint", {0.55f, 0.8f, 1.0f});
   addChoiceParam(paramSet, "coatingStyle", "Coating Style", 1, "Warm", "Neutral", "Cool");
 
-  addDoubleParam(paramSet, "edgeBlur", "Edge Blur", 0.18, 0.0, 1.0, 0.0, 0.7);
-  addDoubleParam(paramSet, "tangentialSmear", "Tangential Smear", 0.18, 0.0, 1.0, 0.0, 0.8);
+  addDoubleParam(paramSet, "edgeBlur", "Edge Blur", 0.05, 0.0, 1.0, 0.0, 0.7);
+  addDoubleParam(paramSet, "tangentialSmear", "Tangential Smear", 0.03, 0.0, 1.0, 0.0, 0.8);
   addDoubleParam(paramSet, "radialFalloff", "Radial Falloff", 0.65, 0.0, 1.0, 0.0, 1.0);
 
   addDoubleParam(paramSet, "barrel", "Barrel", 0.0, -0.5, 0.5, -0.2, 0.2);
@@ -917,20 +969,22 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "focusDistance", "Focus Distance", 0.5, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "breathingAmount", "Breathing Amount", 0.0, -1.0, 1.0, -0.5, 0.5);
 
-  addDoubleParam(paramSet, "lateralCA", "Lateral CA", 0.18, 0.0, 1.0, 0.0, 0.6);
-  addDoubleParam(paramSet, "longitudinalCA", "Longitudinal CA", 0.03, 0.0, 1.0, 0.0, 0.3);
+  addDoubleParam(paramSet, "lateralCA", "Lateral CA", 0.03, 0.0, 1.0, 0.0, 0.6,
+                 "1.0 is approximately four pixels of edge separation.");
+  addDoubleParam(paramSet, "longitudinalCA", "Longitudinal CA", 0.0, 0.0, 1.0, 0.0, 0.3,
+                 "Reserved for a future warped-coordinate implementation.");
   addBooleanParam(paramSet, "edgeOnlyCA", "Edge Only CA", 1);
 
-  addDoubleParam(paramSet, "ovalVignette", "Oval Vignette", 0.25, 0.0, 1.0, 0.0, 0.8);
+  addDoubleParam(paramSet, "ovalVignette", "Oval Vignette", 0.05, 0.0, 1.0, 0.0, 0.8);
   addDoubleParam(paramSet, "vignetteAsymmetry", "Asymmetry", 0.0, -1.0, 1.0, -0.5, 0.5);
   addDoubleParam(paramSet, "cornerBias", "Corner Bias", 0.0, -1.0, 1.0, -0.5, 0.5);
 
   addDoubleParam(paramSet, "horizontalSmear", "Horizontal Smear", 0.1, 0.0, 1.0, 0.0, 0.7);
   addDoubleParam(paramSet, "verticalSharpness", "Vertical Sharpness", 0.0, 0.0, 1.0, 0.0, 0.5);
-  addDoubleParam(paramSet, "fieldCurvature", "Field Curvature", 0.2, 0.0, 1.0, 0.0, 0.7);
+  addDoubleParam(paramSet, "fieldCurvature", "Field Curvature", 0.03, 0.0, 1.0, 0.0, 0.7);
 
-  addDoubleParam(paramSet, "catEyeStrength", "Cat-eye Strength", 0.2, 0.0, 1.0, 0.0, 0.8);
-  addDoubleParam(paramSet, "bokehVignette", "Bokeh Vignette", 0.2, 0.0, 1.0, 0.0, 0.8);
+  addDoubleParam(paramSet, "catEyeStrength", "Edge Highlight Vignette", 0.0, 0.0, 1.0, 0.0, 0.8);
+  addDoubleParam(paramSet, "bokehVignette", "Bloom Vignette", 0.0, 0.0, 1.0, 0.0, 0.8);
   addDoubleParam(paramSet, "edgeCompression", "Edge Compression", 0.0, 0.0, 1.0, 0.0, 0.7);
 
   addBooleanParam(paramSet, "guidesEnabled", "Aspect Guides", 0);
