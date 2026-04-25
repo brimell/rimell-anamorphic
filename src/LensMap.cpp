@@ -1,5 +1,6 @@
 #include "LensMap.h"
 
+#include "LensIdentity.h"
 #include "MathUtils.h"
 
 #include <algorithm>
@@ -12,87 +13,26 @@ float safeSqueezeDelta(const RenderParams &params) {
   return std::max(0.0f, params.squeezeRatio - 1.0f);
 }
 
-float presetAxisWarp(int lensIdentity) {
-  switch (lensIdentity) {
-  case 1:
-    return 0.22f;
-  case 2:
-    return 0.62f;
-  case 3:
-    return 0.46f;
-  default:
-    return 0.0f;
-  }
-}
-
-float presetBloomScale(int lensIdentity) {
-  switch (lensIdentity) {
-  case 1:
-    return 1.08f;
-  case 2:
-    return 1.45f;
-  case 3:
-    return 1.32f;
-  default:
-    return 1.0f;
-  }
-}
-
-float presetFlareScale(int lensIdentity) {
-  switch (lensIdentity) {
-  case 1:
-    return 1.08f;
-  case 2:
-    return 1.55f;
-  case 3:
-    return 1.25f;
-  default:
-    return 1.0f;
-  }
-}
-
-float presetGhostScaleX(int lensIdentity) {
-  switch (lensIdentity) {
-  case 2:
-    return 1.18f;
-  case 3:
-    return 1.1f;
-  default:
-    return 1.04f;
-  }
-}
-
-float presetGhostScaleY(int lensIdentity) {
-  switch (lensIdentity) {
-  case 2:
-    return 0.9f;
-  case 3:
-    return 0.94f;
-  default:
-    return 0.98f;
-  }
-}
-
 } // namespace
 
 float lensIdentityAxisWarp(const RenderParams &params) {
-  return clamp01(params.axisWarp + presetAxisWarp(params.lensIdentity));
+  return clamp01(params.axisWarp + lensPresetAxisWarp(params.lensIdentity));
 }
 
 float lensIdentityBloomScale(const RenderParams &params) {
-  return presetBloomScale(params.lensIdentity) * (1.0f + safeSqueezeDelta(params) * 0.35f);
+  return lensPresetBloomScale(params.lensIdentity) * (1.0f + safeSqueezeDelta(params) * 0.35f);
 }
 
 float lensIdentityFlareScale(const RenderParams &params) {
-  return presetFlareScale(params.lensIdentity) * (1.0f + safeSqueezeDelta(params) * 0.55f);
+  return lensPresetFlareScale(params.lensIdentity) * (1.0f + safeSqueezeDelta(params) * 0.55f);
 }
 
 float lensIdentityGhostScaleX(const RenderParams &params) {
-  return presetGhostScaleX(params.lensIdentity) * (1.0f + safeSqueezeDelta(params) * 0.12f);
+  return lensPresetGhostScaleX(params.lensIdentity) * (1.0f + safeSqueezeDelta(params) * 0.12f);
 }
 
 float lensIdentityGhostScaleY(const RenderParams &params) {
-  return presetGhostScaleY(params.lensIdentity) / (1.0f + safeSqueezeDelta(params) * 0.06f);
+  return lensPresetGhostScaleY(params.lensIdentity) / (1.0f + safeSqueezeDelta(params) * 0.06f);
 }
 
 LensMap buildLensMap(float dstX, float dstY, const Image &source, int width, int height,

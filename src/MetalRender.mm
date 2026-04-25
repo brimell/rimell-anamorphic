@@ -256,6 +256,8 @@ float smoothstepf(float e0, float e1, float x) {
   return t * t * (3.0f - 2.0f * t);
 }
 float safeSqueezeDelta(constant P& p) { return max(0.0f, p.squeezeRatio - 1.0f); }
+// Keep these values in sync with LensIdentity.h. The Metal source is compiled
+// from a runtime string, so the C++ inline helpers cannot be included directly.
 float presetAxisWarp(int v) { return v == 1 ? 0.22f : (v == 2 ? 0.62f : (v == 3 ? 0.46f : 0.0f)); }
 float presetBloomScale(int v) { return v == 1 ? 1.08f : (v == 2 ? 1.45f : (v == 3 ? 1.32f : 1.0f)); }
 float presetFlareScale(int v) { return v == 1 ? 1.08f : (v == 2 ? 1.55f : (v == 3 ? 1.25f : 1.0f)); }
@@ -644,8 +646,9 @@ OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image 
   [encoder dispatchThreadgroups:groups threadsPerThreadgroup:threadsPerGroup];
   [encoder endEncoding];
   [commandBuffer commit];
+  [commandBuffer waitUntilCompleted];
 
-  return kOfxStatOK;
+  return commandBuffer.status == MTLCommandBufferStatusError ? kOfxStatGPURenderFailed : kOfxStatOK;
 }
 
 } // namespace rimell
