@@ -42,7 +42,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
 
   gEffectSuite->clipDefine(effect, kDepthClipName, &props);
-  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
+  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentAlpha);
+  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 1, kOfxImageComponentRGBA);
   gPropertySuite->propSetInt(props, kOfxImageClipPropOptional, 0, 1);
 
   OfxParamSetHandle paramSet = nullptr;
