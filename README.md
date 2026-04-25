@@ -464,6 +464,16 @@ Rimell Anamorphic is currently focused on converting normal spherical footage in
 
 The plugin currently implements the following behaviour:
 
+### 0. Creative look presets
+
+* `Manual`, which leaves the individual controls as set
+* `Subtle Modern`, a restrained 1.33x-style starting point
+* `Classic 2x`, a stronger vintage-scope starting point
+* `Night Flare`, biased toward bright-source streaks, bloom, and ghosts
+* `Geometry Only`, which disables additive optical effects and keeps the synthetic mapping path
+
+These presets are exposed as starting points through the normal OFX parameter set. The individual controls remain public, so a host project can still keyframe or override the underlying look controls.
+
 ### 1. Input and geometry mode architecture
 
 * Input mode options:
@@ -547,6 +557,7 @@ The plugin currently implements the following behaviour:
   * `Preview`
   * `Final`
 * Quality mode scales expensive sampling paths for flare, bloom, blur, ghosts, and chromatic work
+* Control groups are organized as Core, Geometry, Highlights / Flares, Edge / CA, and Framing where the host exposes OFX parameter groups
 
 ---
 
@@ -596,10 +607,13 @@ The plugin currently implements the following behaviour:
 * Temporal clip access disabled
 * Identity optimization: if Mix is 0, the effect reports source identity
 * ROI expansion is implemented to account for flare, bloom, blur, and CA sampling footprint
+* CPU render path supports 8-bit, 16-bit, and 32-bit float RGBA
+* On Apple builds, a Metal render path is advertised for 32-bit float RGBA when the host supplies an OFX Metal command queue
+* CPU rendering remains the fallback when Metal is unavailable, unsupported by the host, or the render bit depth is not 32-bit float
 
 ---
 
-## What Is Not Implemented Yet
+## Current Limitations
 
 The current version does not include:
 
@@ -608,8 +622,7 @@ The current version does not include:
 * Measured lens profile system
 * Lens calibration workflow
 * STMap import/export workflow
-* GPU render path
-* Built-in preset browser
+* Built-in preset browser beyond the current `Look Preset` parameter
 * Multi-clip workflows beyond source/output filter processing
 * Real measured lens model interchange
 * Physically accurate internal reflection path tracing
@@ -628,7 +641,7 @@ Possible future features:
 * spherical-to-anamorphic distortion transitions
 * calibrated view maps for specific real lenses
 * depth/matte input for stronger bokeh behaviour
-* GPU render path for heavier sampling
+* broader GPU render support for non-float bit depths and non-Metal platforms
 * separate utility plugin for desqueeze/framing only
 * real-time preview optimisations
 
