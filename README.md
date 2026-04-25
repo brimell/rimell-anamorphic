@@ -268,3 +268,60 @@ To be decided.
 ## Disclaimer
 
 Rimell Anamorphic is an independent plugin concept and is not affiliated with ARRI, ZEISS, Panavision, Blackmagic Design, DaVinci Resolve, or any other lens or software manufacturer.
+
+---
+
+## Current implementation
+
+The repository now contains a C++ OpenFX image effect plugin implementation in `src/RimellAnamorphic.cpp`.
+
+Implemented controls include:
+
+* Squeeze / desqueeze mode and ratio
+* Horizontal FOV boost and virtual focal length
+* Oval bokeh stretch, rotation, and edge falloff
+* Horizontal flare intensity, length, colour, threshold, and angle
+* Veil, bloom radius, highlight cream, and black-lift protection
+* Ghost count, spread, tint, and coating style
+* Edge blur, tangential smear, radial falloff, horizontal smear, field curvature, and vertical sharpness
+* Barrel, mustache, vertical compensation, and edge compression
+* Close-focus mumps, face-width compensation, focus distance, and breathing
+* Lateral and longitudinal chromatic aberration
+* Oval vignette, asymmetry, corner bias, cat-eye strength, and bokeh vignette
+* 2.00:1, 2.39:1, and 2.66:1 guides with optional letterbox preview
+
+## Build
+
+The Makefile build path works without CMake:
+
+```sh
+make
+```
+
+The built bundle is written to:
+
+```text
+build/RimellAnamorphic.ofx.bundle
+```
+
+Install for the current macOS user:
+
+```sh
+make install
+```
+
+By default this installs to:
+
+```text
+~/Library/OFX/Plugins/RimellAnamorphic.ofx.bundle
+```
+
+Restart DaVinci Resolve after installation. The effect appears under `Rimell/Lens` as `Rimell Anamorphic`.
+
+If CMake is available, this also works:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+cmake --install build
+```
