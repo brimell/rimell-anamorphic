@@ -1,6 +1,10 @@
 # Rimell Anamorphic
 
-Rimell Anamorphic is an OFX filter plugin that applies a combined anamorphic-style optical treatment in a single pass.
+Rimell Anamorphic is an OFX filter plugin for making spherical digital footage feel like finished, desqueezed anamorphic footage.
+
+In its main mode, the plugin assumes normal spherical source footage and applies a combined anamorphic-style optical treatment as one OFX effect.
+
+A separate utility path is available for real anamorphic source footage that genuinely needs desqueeze and framing handling.
 
 Status: active development / experimental.
 
@@ -8,54 +12,75 @@ This README reflects the current implementation in code.
 
 ## Current Functionality
 
+Rimell Anamorphic is currently focused on converting normal spherical footage into a stylized, already-desqueezed anamorphic-looking image. It also includes utility controls for genuine anamorphic source footage, but the main creative path assumes the input was shot spherical.
+
 The plugin currently implements the following behavior:
 
-1. Geometry and squeeze pipeline
-- Squeeze mode: Off, Squeeze, Desqueeze
-- Squeeze ratio control
-- Horizontal FOV boost influenced by virtual focal length
+1. Input and geometry mode architecture
+- Input mode options:
+	- Spherical -> Anamorphic Look (default intent)
+	- Real Anamorphic Utility
+	- Creative Warp
+- Geometry controls include:
+	- Squeeze mode options currently used by geometry processing (Off, Squeeze, Desqueeze)
+	- Squeeze ratio control
+	- Virtual horizontal expansion behavior (formerly horizontal FOV boost), influenced by virtual focal length
+
+2. Virtual anamorphic geometry and axis-specific warping
 - Barrel and mustache distortion
 - Vertical compensation
 - Edge compression
-- Close-focus mumps shaping with face-width compensation
+- Close-focus center squeeze variation (mumps-style shaping)
+- Center protection / width compensation behavior to limit over-widening in key subjects
 - Breathing response based on focus distance
 
-2. Chromatic behavior
-- Lateral chromatic aberration with pixel scaling
-- Edge-only CA option
-- Longitudinal CA approximation (focus/edge dependent channel softness)
-
 3. Edge and field character
+- Edge focus falloff behavior (formerly field curvature contribution)
 - Edge blur
-- Field curvature contribution
 - Tangential smear and horizontal smear
 - Radial falloff shaping
 - Vertical sharpness compensation
 
-4. Lens additives and highlight response
+4. Chromatic behavior
+- Lateral chromatic aberration with pixel scaling
+- Edge-only CA option
+- Longitudinal CA approximation (focus/edge dependent channel softness)
+
+5. Highlight and flare response
+- Highlight-driven response controls (threshold and shaping) used for flare/bloom systems
 - Directional streak flare with angle, length, intensity, color, threshold, density, span, and falloff
-- Anamorphic-shaped bloom/veil system with stretch, rotation, edge falloff, threshold scaling, ring/sampling controls, and highlight cream
+- Oval highlight bloom and veil shaping controls (bokeh-style highlight behavior)
+- Bloom/veil controls include stretch, rotation, edge falloff, threshold scaling, ring/sampling controls, and highlight cream
+
+6. Ghosting and coating-inspired response
 - Ghost reflections with count, spread, tint, intensity
-- Coating style response (Warm, Neutral, Cool) with warm/cool scaling
+- Coating tint response (Warm, Neutral, Cool) with warm/cool scaling
 - Center veil contribution and black-lift protection behavior
 
-5. Vignette and highlight-edge shaping
+7. Vignette and highlight-edge shaping
 - Oval vignette
 - Asymmetry and corner bias
 - Edge highlight vignette (cat-eye style dimming)
 - Bloom vignette dimming
 
-6. Aspect tools and guides
+8. Scope framing, aspect tools, and guides
 - Aspect guides on/off
 - Output aspect choices: 2.00:1, 2.39:1, 2.66:1, Custom
 - Safe area guide
 - Letterbox preview with opacity
 - Adjustable guide strengths for aspect and safe lines
 
-7. Blend and performance controls
+9. Blend and performance controls
 - Global Mix control
 - Render Quality modes: Draft, Preview, Final
 - Quality mode scales expensive sampling paths for flare, bloom, blur, ghosts, and chromatic work
+
+## Conceptual Model and Limits
+
+- Main path intent: spherical input -> virtual anamorphic presentation.
+- Real anamorphic desqueeze remains available as a utility path for genuinely squeezed source footage.
+- The plugin can simulate anamorphic traits, but it cannot reconstruct horizontal scene information that was never captured in-frame.
+- Oval highlight behavior in this workflow is an approximation of anamorphic highlight response, not a physically complete depth-aware bokeh reconstruction.
 
 ## Host / Technical Behavior
 
