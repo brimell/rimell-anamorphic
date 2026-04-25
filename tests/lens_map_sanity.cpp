@@ -1,4 +1,6 @@
 #include "LensMap.h"
+#include "ParameterLogic.h"
+#include "Parameters.h"
 
 #include <cmath>
 #include <iostream>
@@ -65,6 +67,70 @@ int main() {
                    "creative transfer did not move x") &&
            passed;
   passed = require(creativeMap.transferAmount > 0.0f, "creative transfer amount was zero") && passed;
+
+  rimell::RenderParams protectedCenter;
+  protectedCenter.anamorphicTransfer = 1.0f;
+  protectedCenter.centerProtection = 1.0f;
+  const rimell::LensMap centerMap = rimell::buildLensMap(100.0f, 50.0f, image, 200, 100, protectedCenter);
+  passed = require(centerMap.transferAmount < 0.01f, "center protection did not suppress center transfer") &&
+           passed;
+
+  rimell::RenderParams edgeCompression;
+  edgeCompression.lensIdentity = 0;
+  edgeCompression.squeezeRatio = 1.5f;
+  edgeCompression.anamorphicTransfer = 1.0f;
+  edgeCompression.centerProtection = 0.0f;
+  edgeCompression.edgeCompression = 0.8f;
+  edgeCompression.edgeCompressionStart = 0.1f;
+  const rimell::LensMap edgeMap = rimell::buildLensMap(195.0f, 50.0f, image, 200, 100, edgeCompression);
+  passed = require(edgeMap.sampleCoord.x < edgeMap.sphericalCoord.x, "edge compression did not pull right edge inward") &&
+           passed;
+
+  rimell::RenderParams squeeze;
+  squeeze.inputMode = 1;
+  squeeze.squeezeMode = 1;
+  squeeze.squeezeRatio = 2.0f;
+  const rimell::LensMap squeezeMap = rimell::buildLensMap(180.0f, 50.0f, image, 200, 100, squeeze);
+  passed = require(near(squeezeMap.sampleCoord.x, squeezeMap.sphericalCoord.x * squeeze.squeezeRatio),
+                   "utility squeeze did not scale x") &&
+           passed;
+
+  rimell::RenderParams clamped;
+  clamped.renderQuality = 99;
+  clamped.lookPreset = 99;
+  clamped.bloomRings = 99;
+  clamped.bloomSamplesPerRing = 1;
+  clamped.ghostCount = 99;
+  clamped.coatingStyle = -4;
+  clamped = rimell::clampRenderParams(clamped);
+  passed = require(clamped.renderQuality == 2 && clamped.lookPreset == rimell::kLookPresetGeometryOnly &&
+                       clamped.bloomRings == 8 && clamped.bloomSamplesPerRing == 3 &&
+                       clamped.ghostCount == 8 && clamped.coatingStyle == 0,
+                   "parameter clamps did not hold expected bounds") &&
+           passed;
+
+  rimell::RenderParams night;
+  night.lookPreset = rimell::kLookPresetNightFlare;
+  night = rimell::normalizeRenderParams(night);
+  passed = require(night.flareIntensity > 0.3f && night.ghostCount == 3 && night.bloomRadius > 0.2f,
+                   "night flare preset did not apply expected creative defaults") &&
+           passed;
+
+  rimell::RenderParams geometryOnly;
+  geometryOnly.lookPreset = rimell::kLookPresetGeometryOnly;
+  geometryOnly = rimell::normalizeRenderParams(geometryOnly);
+  passed = require(near(geometryOnly.flareIntensity, 0.0f) && near(geometryOnly.lateralCA, 0.0f) &&
+                       geometryOnly.ghostCount == 0,
+                   "geometry-only preset left additive optical effects enabled") &&
+           passed;
+
+  passed = require(near(rimell::aspectValue(0, 3.0f), 2.0f) &&
+                       near(rimell::aspectValue(1, 3.0f), 2.39f) &&
+                       near(rimell::aspectValue(2, 3.0f), 2.66f) &&
+                       near(rimell::aspectValue(3, 3.25f), 3.25f) &&
+                       near(rimell::aspectValue(99, 3.0f), 2.39f),
+                   "aspect values changed unexpectedly") &&
+           passed;
 
   return passed ? 0 : 1;
 }

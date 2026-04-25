@@ -46,6 +46,7 @@ add_library(${OFX_PLUGIN_NAME} MODULE
   src/ParameterDefinition.cpp
   src/ParameterLogic.cpp
   src/Parameters.cpp
+  src/RenderCore.cpp
   src/Render.cpp
   src/RimellAnamorphic.cpp
 )
@@ -124,6 +125,22 @@ target_include_directories(lens-map-sanity PRIVATE
 )
 
 target_compile_options(lens-map-sanity PRIVATE
+  $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->
+  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
+)
+
+add_executable(render-sanity
+  tests/render_sanity.cpp
+  src/ParameterLogic.cpp
+  src/RenderCore.cpp
+)
+
+target_include_directories(render-sanity PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${openfx_SOURCE_DIR}/include"
+)
+
+target_compile_options(render-sanity PRIVATE
   $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->
   $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
 )

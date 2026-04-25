@@ -151,4 +151,19 @@ RenderParams normalizeRenderParams(RenderParams params) {
   return clampRenderParams(applyLookPreset(clampRenderParams(params)));
 }
 
+float aspectValue(int index, float customOutputAspect) {
+  switch (index) {
+  case 0:
+    return 2.0f;
+  case 1:
+    return 2.39f;
+  case 2:
+    return 2.66f;
+  case 3:
+    return std::max(0.1f, customOutputAspect);
+  default:
+    return 2.39f;
+  }
+}
+
 } // namespace rimell
