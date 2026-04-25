@@ -319,7 +319,7 @@ make install
 By default this installs to:
 
 ```text
-~/Library/OFX/Plugins/RimellAnamorphic.ofx.bundle
+/Library/OFX/Plugins/RimellAnamorphic.ofx.bundle
 ```
 
 Restart DaVinci Resolve after installation. The effect appears under `Rimell/Lens` as `Rimell Anamorphic`.

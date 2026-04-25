@@ -25,7 +25,7 @@ set(OFX_BUNDLE_NAME "${OFX_PLUGIN_NAME}.ofx.bundle")
 
 if(APPLE)
   set(OFX_ARCH_DIR "MacOS")
-  set(DEFAULT_OFX_INSTALL_DIR "$ENV{HOME}/Library/OFX/Plugins")
+  set(DEFAULT_OFX_INSTALL_DIR "/Library/OFX/Plugins")
 elseif(WIN32)
   set(OFX_ARCH_DIR "Win64")
   set(DEFAULT_OFX_INSTALL_DIR "C:/Program Files/Common Files/OFX/Plugins")
