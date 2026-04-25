@@ -24,5 +24,7 @@ float lensIdentityGhostScaleY(const RenderParams &params);
 LensMap buildLensMap(float dstX, float dstY, const Image &source, int width, int height,
                      const RenderParams &params);
 Vec2 lensMapToSourcePixel(const LensMap &map, const Image &source, int width, int height);
+Vec2 applyEdgeCrop(float dstX, float dstY, const Image &source, float cropScale);
+float automaticEdgeCropScale(const Image &source, int width, int height, const RenderParams &params);
 
 } // namespace rimell

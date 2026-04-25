@@ -68,6 +68,22 @@ int main() {
            passed;
   passed = require(creativeMap.transferAmount > 0.0f, "creative transfer amount was zero") && passed;
 
+  rimell::RenderParams autoCrop;
+  autoCrop.inputMode = 1;
+  autoCrop.squeezeMode = 1;
+  autoCrop.squeezeRatio = 2.0f;
+  autoCrop.lateralCA = 0.0f;
+  autoCrop.autoEdgeCrop = 1;
+  const float cropScale = rimell::automaticEdgeCropScale(image, 200, 100, autoCrop);
+  passed = require(cropScale > 1.0f, "automatic edge crop did not crop an out-of-bounds map") &&
+           passed;
+  const rimell::Vec2 croppedEdge = rimell::applyEdgeCrop(199.0f, 50.0f, image, cropScale);
+  const rimell::LensMap croppedMap =
+      rimell::buildLensMap(croppedEdge.x, croppedEdge.y, image, 200, 100, autoCrop);
+  const rimell::Vec2 croppedSource = rimell::lensMapToSourcePixel(croppedMap, image, 200, 100);
+  passed = require(croppedSource.x <= 199.0f, "automatic edge crop left right edge out of bounds") &&
+           passed;
+
   rimell::RenderParams protectedCenter;
   protectedCenter.anamorphicTransfer = 1.0f;
   protectedCenter.centerProtection = 1.0f;

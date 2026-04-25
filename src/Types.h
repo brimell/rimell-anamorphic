@@ -127,6 +127,8 @@ struct RenderParams {
   float letterboxOpacity = 0.55f;
   float guideAspectStrength = 0.85f;
   float guideSafeStrength = 0.45f;
+  int autoEdgeCrop = 0;
+  float edgeCropScale = 1.0f;
 };
 
 } // namespace rimell

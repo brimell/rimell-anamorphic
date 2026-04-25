@@ -99,6 +99,8 @@ struct MetalParams {
   float letterboxOpacity;
   float guideAspectStrength;
   float guideSafeStrength;
+  int autoEdgeCrop;
+  float edgeCropScale;
 };
 
 struct MetalImageInfo {
@@ -209,6 +211,8 @@ MetalParams packParams(const RenderParams &params) {
       params.letterboxOpacity,
       params.guideAspectStrength,
       params.guideSafeStrength,
+      params.autoEdgeCrop,
+      params.edgeCropScale,
   };
 }
 
@@ -235,6 +239,7 @@ struct P {
   float catEyeStrength; float bokehVignette; float edgeCompression; float catEyeDimScale; float bokehVignetteDimScale;
   float edgeCompressionScale; float centerVeilScale; int guidesEnabled; int outputAspect; float customOutputAspect;
   float safeArea; int letterboxPreview; float letterboxOpacity; float guideAspectStrength; float guideSafeStrength;
+  int autoEdgeCrop; float edgeCropScale;
 };
 
 struct I {
@@ -351,8 +356,17 @@ float2 lensMapToSourcePixel(LensMap m, constant I& info) {
   return float2(cx + m.sampleCoord.x * max(1.0f, float(info.width) * 0.5f), cy + m.sampleCoord.y * max(1.0f, float(info.height) * 0.5f));
 }
 
+float2 applyEdgeCrop(float dstX, float dstY, constant I& info, constant P& p) {
+  float scale = max(1.0f, p.edgeCropScale);
+  if (scale <= 1.0001f) return float2(dstX, dstY);
+  float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
+  float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
+  return float2(cx + (dstX - cx) / scale, cy + (dstY - cy) / scale);
+}
+
 float4 warpedSourceSample(const device float* src, constant I& info, constant P& p, float dstX, float dstY, float caPixels) {
-  LensMap lm = buildLensMap(dstX, dstY, info, p);
+  float2 cropped = applyEdgeCrop(dstX, dstY, info, p);
+  LensMap lm = buildLensMap(cropped.x, cropped.y, info, p);
   float2 sp = lensMapToSourcePixel(lm, info);
   float caMask = p.edgeOnlyCA > 0.5f ? smoothstepf(0.2f, 1.0f, lm.radius) : 1.0f;
   sp += lm.caDirection * caPixels * caMask;

@@ -188,6 +188,7 @@ RenderParams readParams(OfxImageEffectHandle effect) {
       static_cast<float>(getDoubleParam(paramSet, "guideAspectStrength", params.guideAspectStrength));
   params.guideSafeStrength =
       static_cast<float>(getDoubleParam(paramSet, "guideSafeStrength", params.guideSafeStrength));
+  params.autoEdgeCrop = getIntParam(paramSet, "autoEdgeCrop", params.autoEdgeCrop);
 
   return normalizeRenderParams(params);
 }

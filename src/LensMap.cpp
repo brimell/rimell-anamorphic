@@ -9,8 +9,42 @@
 namespace rimell {
 namespace {
 
+constexpr int kAutoCropSamples = 33;
+constexpr float kMaxAutoCropScale = 3.0f;
+
 float safeSqueezeDelta(const RenderParams &params) {
   return std::max(0.0f, params.squeezeRatio - 1.0f);
+}
+
+bool sampleInsideSource(const LensMap &map, const Vec2 &sourcePixel, const Image &source,
+                        const RenderParams &params) {
+  const float caPixels = params.lateralCA * params.lateralCAPixelScale;
+  const float caMask = params.edgeOnlyCA > 0.5f ? smoothstep(0.2f, 1.0f, map.radius) : 1.0f;
+  const float padX = std::abs(map.caDirection.x) * caPixels * caMask;
+  const float padY = std::abs(map.caDirection.y) * caPixels * caMask;
+  return sourcePixel.x - padX >= static_cast<float>(source.bounds.x1) &&
+         sourcePixel.x + padX <= static_cast<float>(source.bounds.x2 - 1) &&
+         sourcePixel.y - padY >= static_cast<float>(source.bounds.y1) &&
+         sourcePixel.y + padY <= static_cast<float>(source.bounds.y2 - 1);
+}
+
+bool edgeCropScaleCoversSource(const Image &source, int width, int height,
+                               const RenderParams &params, float cropScale) {
+  for (int y = 0; y < kAutoCropSamples; ++y) {
+    const float fy = static_cast<float>(y) / static_cast<float>(kAutoCropSamples - 1);
+    const float dstY = lerp(static_cast<float>(source.bounds.y1), static_cast<float>(source.bounds.y2 - 1), fy);
+    for (int x = 0; x < kAutoCropSamples; ++x) {
+      const float fx = static_cast<float>(x) / static_cast<float>(kAutoCropSamples - 1);
+      const float dstX = lerp(static_cast<float>(source.bounds.x1), static_cast<float>(source.bounds.x2 - 1), fx);
+      const Vec2 cropped = applyEdgeCrop(dstX, dstY, source, cropScale);
+      const LensMap map = buildLensMap(cropped.x, cropped.y, source, width, height, params);
+      const Vec2 sourcePixel = lensMapToSourcePixel(map, source, width, height);
+      if (!sampleInsideSource(map, sourcePixel, source, params)) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 } // namespace
@@ -129,6 +163,44 @@ Vec2 lensMapToSourcePixel(const LensMap &map, const Image &source, int width, in
   const float halfW = std::max(1.0f, static_cast<float>(width) * 0.5f);
   const float halfH = std::max(1.0f, static_cast<float>(height) * 0.5f);
   return {cx + map.sampleCoord.x * halfW, cy + map.sampleCoord.y * halfH};
+}
+
+Vec2 applyEdgeCrop(float dstX, float dstY, const Image &source, float cropScale) {
+  const float scale = std::max(1.0f, cropScale);
+  if (scale <= 1.0001f) {
+    return {dstX, dstY};
+  }
+
+  const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
+  const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
+  return {cx + (dstX - cx) / scale, cy + (dstY - cy) / scale};
+}
+
+float automaticEdgeCropScale(const Image &source, int width, int height, const RenderParams &params) {
+  if (params.autoEdgeCrop == 0 || width <= 1 || height <= 1) {
+    return 1.0f;
+  }
+
+  if (edgeCropScaleCoversSource(source, width, height, params, 1.0f)) {
+    return 1.0f;
+  }
+
+  float low = 1.0f;
+  float high = 1.05f;
+  while (high < kMaxAutoCropScale && !edgeCropScaleCoversSource(source, width, height, params, high)) {
+    low = high;
+    high = std::min(kMaxAutoCropScale, high * 1.2f);
+  }
+
+  for (int i = 0; i < 18; ++i) {
+    const float mid = (low + high) * 0.5f;
+    if (edgeCropScaleCoversSource(source, width, height, params, mid)) {
+      high = mid;
+    } else {
+      low = mid;
+    }
+  }
+  return high;
 }
 
 } // namespace rimell

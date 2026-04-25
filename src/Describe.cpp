@@ -163,6 +163,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "letterboxOpacity", "Letterbox Opacity", 0.55, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "guideAspectStrength", "Aspect Guide Strength", 0.85, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "guideSafeStrength", "Safe Guide Strength", 0.45, 0.0, 1.0, 0.0, 1.0);
+  addBooleanParam(paramSet, "autoEdgeCrop", "Auto Edge Crop", 0,
+                  "Crops in by the smallest amount needed to keep warped edge samples inside the source image.");
 
   const char *core[] = {"mix", "renderQuality", "lookPreset"};
   for (const char *name : core) {
@@ -205,7 +207,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
 
   const char *framing[] = {"guidesEnabled", "outputAspect", "customOutputAspect", "safeArea",
                            "letterboxPreview", "letterboxOpacity", "guideAspectStrength",
-                           "guideSafeStrength"};
+                           "guideSafeStrength", "autoEdgeCrop"};
   for (const char *name : framing) {
     setParamParent(paramSet, name, "framingGroup");
   }

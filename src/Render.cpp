@@ -22,7 +22,8 @@ namespace {
 template <typename T>
 Pixel warpedSourceSample(const Image &source, float dstX, float dstY, int width, int height,
                          const RenderParams &params, float caPixels) {
-  const LensMap map = buildLensMap(dstX, dstY, source, width, height, params);
+  const Vec2 cropped = applyEdgeCrop(dstX, dstY, source, params.edgeCropScale);
+  const LensMap map = buildLensMap(cropped.x, cropped.y, source, width, height, params);
   Vec2 sourcePixel = lensMapToSourcePixel(map, source, width, height);
   const float caMask = params.edgeOnlyCA > 0.5f ? smoothstep(0.2f, 1.0f, map.radius) : 1.0f;
   sourcePixel.x += map.caDirection.x * caPixels * caMask;
@@ -453,7 +454,11 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
              !stringsMatch(sourceComponents, kOfxImageComponentRGBA))) {
           status = kOfxStatErrUnsupported;
         } else {
-          const RenderParams params = readParams(instance);
+          RenderParams params = readParams(instance);
+          if (hasSource) {
+            params.edgeCropScale = automaticEdgeCropScale(source, source.bounds.x2 - source.bounds.x1,
+                                                         source.bounds.y2 - source.bounds.y1, params);
+          }
           void *metalCommandQueue = nullptr;
           const bool useMetal = hasSource && metalEnabled(inArgs, &metalCommandQueue);
           if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {

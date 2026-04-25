@@ -124,6 +124,8 @@ RenderParams clampRenderParams(RenderParams params) {
   params.safeArea = clampValue(params.safeArea, 0.5f, 1.0f);
   params.letterboxPreview = params.letterboxPreview != 0 ? 1 : 0;
   params.letterboxOpacity = clampValue(params.letterboxOpacity, 0.0f, 1.0f);
+  params.autoEdgeCrop = params.autoEdgeCrop != 0 ? 1 : 0;
+  params.edgeCropScale = std::max(1.0f, params.edgeCropScale);
   return params;
 }
 
