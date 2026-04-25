@@ -1,6 +1,8 @@
 # Rimell Anamorphic
 
-Rimell Anamorphic is an OFX filter plugin for making spherical digital footage feel like finished, desqueezed anamorphic footage through a procedural mapping approach called **AxiScope Mapping** / **Virtual Anamorphic Transfer**.
+Rimell Anamorphic is an OFX filter plugin for making spherical digital footage feel like finished, desqueezed anamorphic footage through a procedural lens-mapping system called **AxiScope Mapping** / **Virtual Anamorphic Transfer**.
+
+The plugin is now organised around an **OpenLensIO-informed coordinate and profile model**. Rimell Anamorphic does not yet implement full OpenLensIO interchange, but its internal model, naming, metadata structure, and future profile direction are aligned with the OpenLensIO lens-model concepts where they are useful for an OFX image effect.
 
 In its main mode, the plugin assumes normal spherical source footage, builds a synthetic anamorphic view map, samples the original image through that map, then drives optical artefacts from the same mapped coordinate field.
 
@@ -8,7 +10,7 @@ A separate utility path is available for real anamorphic source footage that gen
 
 Status: active development / experimental.
 
-This README reflects the current implementation in code.
+This README reflects the current implementation direction and the planned OpenLensIO-compatible profile architecture.
 
 ---
 
@@ -34,16 +36,330 @@ real anamorphic source footage -> desqueeze / framing / guide handling
 
 ---
 
+## OpenLensIO-Informed Design
+
+OpenLensIO provides a useful reference model for how lens metadata, camera coordinates, distortion, overscan, aperture, and vignetting can be represented in a production-friendly way. Rimell Anamorphic uses OpenLensIO as a conceptual anchor, but it should not be described as a complete OpenLensIO implementation yet.
+
+The current plugin uses an **OpenLensIO-informed profile layer** rather than a strict OpenLensIO file interchange layer.
+
+### What Rimell Anamorphic currently borrows from OpenLensIO
+
+* image-space coordinates centred on the sensor/screen centre
+* horizontal-positive-right and vertical-positive-down image axes
+* millimetre-style normalised screen-space thinking, even when the live OFX render path works in pixels
+* separation between undistorted and distorted coordinate spaces
+* distinction between centre-of-distortion offset and perspective offset
+* radial and decentering distortion concepts
+* overscan / ROI expansion thinking for distortion, blur, flare, and bloom sampling footprints
+* dynamic lens-state thinking, where focus, iris, zoom, and user controls may change the effective profile
+* optical vignetting as a polynomial-style falloff model
+* future support for per-channel distortion parameters for chromatic aberration
+
+### What Rimell Anamorphic does not currently implement
+
+* full OpenLensIO JSON parsing
+* full OpenLensIO serialisation
+* measured lens profile import
+* measured lens profile export
+* strict projection-matrix or field-of-view camera interchange
+* physically complete aperture and circle-of-confusion calculation
+* measured entrance pupil behaviour
+* true calibrated anamorphic lens distortion solving
+
+The current implementation is best described as:
+
+```text
+OpenLensIO-informed synthetic anamorphic profile -> OFX render-time virtual lens map
+```
+
+not:
+
+```text
+complete OpenLensIO lens interchange implementation
+```
+
+---
+
+## OpenLensIO Concepts Used by the Plugin
+
+### Image-space coordinate frame
+
+OpenLensIO describes image/screen coordinates relative to the centre of the sensor or active screen area, with the horizontal axis positive to the right and the vertical axis positive downwards. Rimell Anamorphic adopts the same convention internally for its virtual lens map.
+
+In implementation terms:
+
+```text
+pixel coordinates -> centred normalised image coordinates -> virtual OpenLensIO-style screen coordinates -> lens map -> source sample coordinates
+```
+
+The OFX render path still receives image bounds in pixels, but the lens mapping layer should treat those pixels as samples on a centred image plane.
+
+### Undistorted and distorted spaces
+
+OpenLensIO separates undistorted coordinates from distorted coordinates. Rimell Anamorphic uses the same broad separation:
+
+| Space                     | Meaning in Rimell Anamorphic                                                |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `epsilon_u` / undistorted | the idealised spherical or virtual camera coordinate before lens distortion |
+| `epsilon_d` / distorted   | the image coordinate after synthetic lens distortion / anamorphic transfer  |
+| `epsilon_mapped`          | the final mapped source coordinate used by the OFX sampler                  |
+
+For real lens correction workflows, undistortion usually means removing lens distortion. Rimell Anamorphic usually does the opposite in its main creative mode: it intentionally adds a controlled synthetic distortion to spherical footage.
+
+### Centre offset and perspective offset
+
+OpenLensIO distinguishes:
+
+| Offset                              | Purpose                                                |
+| ----------------------------------- | ------------------------------------------------------ |
+| `deltaC` / distortion centre offset | moves the centre of distortion independently           |
+| `deltaP` / perspective offset       | moves the centre of projection and distortion together |
+
+Rimell Anamorphic should expose these ideas carefully. In the creative UI, they do not need to be called `deltaC` and `deltaP`, but the profile layer should preserve that distinction.
+
+Suggested user-facing names:
+
+| Internal/OpenLensIO-informed name | User-facing name     |
+| --------------------------------- | -------------------- |
+| `deltaC.x`                        | Distortion Centre X  |
+| `deltaC.y`                        | Distortion Centre Y  |
+| `deltaP.x`                        | Perspective Offset X |
+| `deltaP.y`                        | Perspective Offset Y |
+
+For most users, these should remain advanced controls or profile parameters, not headline creative sliders.
+
+### Radial and decentering distortion
+
+OpenLensIO uses a Brown-Conrady-style distortion model with radial and decentering terms. Rimell Anamorphic should gradually move its distortion layer towards a compatible parameter naming scheme:
+
+| OpenLensIO concept                  | Rimell Anamorphic control / profile parameter           |
+| ----------------------------------- | ------------------------------------------------------- |
+| `k1...k6` radial coefficients       | barrel, pincushion, mustache, higher-order radial shape |
+| `p1`, `p2` decentering coefficients | asymmetric distortion / decentered lens behaviour       |
+| `deltaC`                            | distortion centre offset                                |
+| `deltaP`                            | perspective offset                                      |
+| `Omega`, `OmegaPrime`               | overscan / render expansion                             |
+| `a1...a3`                           | optical vignetting polynomial                           |
+
+The public controls can stay artist-friendly, but saved profiles should use stable OpenLensIO-informed names where possible.
+
+### Overscan and ROI expansion
+
+OpenLensIO treats overscan as necessary when distortion would otherwise leave unrendered areas. Rimell Anamorphic uses the same idea in OFX terms through ROI expansion.
+
+In this plugin, overscan is relevant to:
+
+* barrel / mustache distortion
+* virtual horizontal expansion
+* edge compression
+* flare span
+* bloom radius
+* ghost spread
+* depth-driven defocus
+* chromatic aberration offsets
+
+The plugin’s ROI expansion should be treated as the OFX equivalent of an OpenLensIO-style overscan requirement.
+
+### Aperture and focus
+
+OpenLensIO includes aperture/focus concepts related to circle of confusion, but Rimell Anamorphic does not currently solve a physically complete depth-of-field model.
+
+The current plugin uses:
+
+* `focusDistance` / `Focus Depth`
+* optional depth map input
+* depth focus range
+* depth defocus pixels
+* oval highlight bloom
+* longitudinal CA approximation
+
+These should be described as **focus-aware image-space approximations**, not as a physical aperture solve.
+
+### Vignetting
+
+OpenLensIO models optical vignetting with polynomial radial falloff terms. Rimell Anamorphic currently uses a more creative oval/asymmetric vignette model.
+
+Future profile work should separate:
+
+| Vignette type                 | Use                                                        |
+| ----------------------------- | ---------------------------------------------------------- |
+| OpenLensIO optical vignetting | profile-driven radial intensity falloff                    |
+| natural vignetting            | angle-dependent falloff, future work                       |
+| mechanical vignetting         | physical obstruction / cat-eye edge behaviour, future work |
+| creative oval vignette        | user-facing anamorphic look control                        |
+
+---
+
+## OpenLensIO-Informed Profile Format
+
+Rimell Anamorphic should use a profile file that separates measured/model-style lens data from creative look controls.
+
+A proposed profile structure:
+
+```json
+{
+  "schema": "com.rimell.anamorphic.profile",
+  "schemaVersion": "0.1.0",
+  "profileType": "synthetic_anamorphic_look",
+  "profileName": "Classic 2x Soft Edge",
+  "description": "Synthetic anamorphic look inspired by vintage 2x scope lenses. Not a measured real lens profile.",
+
+  "openLensIO": {
+    "modelVersion": "1.0.0-informed",
+    "implementationStatus": "partial_informed_model",
+    "coordinateUnits": "normalised_sensor_mm_equivalent",
+    "usesOpenLensIOInterchange": false,
+    "notes": "This block follows OpenLensIO concepts and naming where practical, but is not a strict OpenLensIO payload."
+  },
+
+  "sensor": {
+    "activeWidthMm": 36.0,
+    "activeHeightMm": 20.25,
+    "normalisation": "width_based"
+  },
+
+  "lensState": {
+    "focalLengthMm": 50.0,
+    "focusDistance": 0.5,
+    "iris": null,
+    "zoom": null,
+    "entrancePupilDistance": 0.0
+  },
+
+  "centreOffsets": {
+    "deltaC": [0.0, 0.0],
+    "deltaP": [0.0, 0.0]
+  },
+
+  "distortion": {
+    "model": "openlensio_brown_conrady_informed",
+    "k": [-0.08, 0.0, 0.018, 0.0, 0.0, 0.0],
+    "p": [0.0, 0.0],
+    "creativeBarrel": -0.08,
+    "creativeMustache": 0.018
+  },
+
+  "anamorphic": {
+    "mode": "spherical_to_anamorphic_look",
+    "asq": 2.0,
+    "anamorphicTransfer": 0.75,
+    "axisWarp": 0.25,
+    "horizontalExpansion": 0.22,
+    "edgeCompression": 0.18,
+    "edgeCompressionStart": 0.55,
+    "verticalCompensation": 0.08,
+    "centreProtection": 0.65,
+    "mumps": 0.05,
+    "mumpsCompensation": 0.35,
+    "breathingX": 0.04,
+    "breathingY": 0.01
+  },
+
+  "chromaticAberration": {
+    "model": "rimell_per_channel_offset",
+    "lateralAmountPixels": 0.8,
+    "edgeOnly": true,
+    "longitudinalAmount": 0.03,
+    "futureOpenLensIOMode": "three_sets_of_distortion_parameters"
+  },
+
+  "vignetting": {
+    "openLensIOOptical": {
+      "enabled": false,
+      "a": [0.0, 0.0, 0.0]
+    },
+    "creativeOval": {
+      "enabled": true,
+      "amount": 0.18,
+      "asymmetry": 0.0,
+      "cornerBias": 0.0,
+      "catEyeEdge": 0.25
+    }
+  },
+
+  "edgeCharacter": {
+    "edgeFocusFalloff": 0.25,
+    "edgeBlur": 0.22,
+    "horizontalSmear": 0.16,
+    "tangentialSmear": 0.18,
+    "radialFalloff": 0.65,
+    "verticalSharpness": 0.04
+  },
+
+  "highlightResponse": {
+    "threshold": 0.82,
+    "thresholdSoftness": 0.15,
+    "ovalHighlightShape": 0.65,
+    "ovalHighlightRotation": 0.0,
+    "bloomRadius": 0.24,
+    "highlightCream": 0.25,
+    "veil": 0.08,
+    "blackLiftProtection": 0.65
+  },
+
+  "flare": {
+    "enabled": true,
+    "angleDegrees": 0.0,
+    "length": 0.45,
+    "intensity": 0.25,
+    "colour": [0.35, 0.75, 1.0],
+    "density": 1.0,
+    "span": 1.0,
+    "falloff": 3.0
+  },
+
+  "ghosting": {
+    "enabled": true,
+    "count": 2,
+    "spread": 0.35,
+    "intensity": 0.12,
+    "tint": [0.55, 0.8, 1.0]
+  },
+
+  "framing": {
+    "outputAspect": 2.39,
+    "letterboxPreview": true,
+    "safeArea": 0.9
+  }
+}
+```
+
+This is not a strict OpenLensIO file. It is a Rimell profile format with an OpenLensIO-informed lens block. That distinction matters.
+
+---
+
+## OpenLensIO Mapping Table
+
+| OpenLensIO parameter / concept | Meaning                                   | Rimell Anamorphic usage                                            |
+| ------------------------------ | ----------------------------------------- | ------------------------------------------------------------------ |
+| `w`                            | active sensor width in mm                 | profile sensor width / normalisation basis                         |
+| `F`                            | focal length in mm                        | virtual focal length / horizontal expansion reference              |
+| `deltaC`                       | distortion centre offset                  | advanced distortion centre controls                                |
+| `deltaP`                       | perspective offset                        | advanced perspective offset controls                               |
+| `k1...k6`                      | radial distortion coefficients            | profile-level radial distortion, maps to barrel/mustache controls  |
+| `p1`, `p2`                     | decentering distortion                    | asymmetric distortion / lens decentering                           |
+| `Omega`, `OmegaPrime`          | overscan factors                          | OFX ROI expansion / render overscan planning                       |
+| `OmegaMax`, `OmegaPrimeMax`    | maximum overscan                          | future profile metadata for safe render bounds                     |
+| `zepd`                         | entrance pupil distance                   | future focus/breathing metadata; currently not physically modelled |
+| `Phi`                          | focal distance                            | focus distance / depth-map focus value, approximate                |
+| `a1...a3`                      | optical vignetting coefficients           | future profile-driven vignetting; current vignette is creative     |
+| anamorphic `Asq`               | anamorphic squeeze                        | real desqueeze utility and synthetic anamorphic transfer strength  |
+| anamorphic `Ax`, `Ay`          | asymmetric anamorphic distortion terms    | future axis-specific distortion coefficients                       |
+| per-channel distortion sets    | lateral chromatic aberration future model | future RGB distortion profiles; current CA is pixel-offset based   |
+
+---
+
 ## AxiScope Mapping / Virtual Anamorphic Transfer
 
 The current implementation is built around one shared procedural lens map instead of a set of unrelated look sliders.
 
 For each output pixel, Rimell Anamorphic:
 
-* converts the pixel into normalized source coordinates
+* converts the pixel into centred image coordinates
+* maps those coordinates into an OpenLensIO-informed virtual screen space
 * builds a procedural virtual lens coordinate field
 * blends from spherical coordinates into an axis-dependent anamorphic coordinate using `Anamorphic Transfer`
-* applies center protection, edge compression, axis-weighted barrel/mustache distortion, mumps, breathing, and virtual horizontal expansion
+* applies centre protection, edge compression, axis-weighted barrel/mustache distortion, mumps, breathing, and virtual horizontal expansion
 * samples the source image through the final map
 * derives chromatic separation, edge softness, bloom shape, flare length, ghost bias, and vignette behaviour from the same lens identity
 
@@ -82,8 +398,6 @@ This means:
 
 For example, when spherical footage is cropped to 2.39:1, the frame becomes wide, but the lens behaviour remains spherical. You gain a widescreen composition, but you lose vertical image area. The crop does not create anamorphic bokeh, anamorphic squeeze, axis-specific distortion, horizontal streak flare, or differential focus behaviour.
 
-In a VFX or post-production context, spherical footage is often easier to work with because its distortions are usually describable with standard radial lens models. These can include barrel distortion, pincushion distortion, mustache distortion, decentering, thin-prism distortion, vignetting, chromatic aberration, flare, and bokeh. Many of these are not unique to spherical lenses, but their behaviour is usually less axis-dependent than with anamorphic glass.
-
 ---
 
 ### Anamorphic lenses
@@ -91,10 +405,6 @@ In a VFX or post-production context, spherical footage is often easier to work w
 An anamorphic lens has different imaging behaviour in two perpendicular axes. The common cinema version uses cylindrical optical elements to compress a wide horizontal field of view onto a narrower recording format.
 
 The important point is that an anamorphic lens is not simply a wide lens. It is an optical system with unequal power in the horizontal and vertical planes.
-
-In practical cinema terms, anamorphic lenses were historically used to record widescreen images onto standard film frames. Instead of cropping away the top and bottom of the film frame, the lens squeezed the wider image onto the available frame area. The image was then desqueezed later for projection or post-production.
-
-This allowed a widescreen image to use more of the available film area than a simple spherical crop. That is one of the reasons anamorphic capture became important in cinema: it was both a format solution and an optical aesthetic.
 
 A real anamorphic capture pipeline looks roughly like this:
 
@@ -112,125 +422,6 @@ Those two workflows can produce the same output aspect ratio, but they do not pr
 
 ---
 
-### Aspect ratio, storage aspect ratio, display aspect ratio, and pixel aspect ratio
-
-Anamorphic imaging is closely tied to the distinction between the shape of the stored image and the shape of the displayed image.
-
-Useful terms:
-
-| Term                           | Meaning                                                                         |
-| ------------------------------ | ------------------------------------------------------------------------------- |
-| `Storage Aspect Ratio` / `SAR` | The pixel dimensions of the stored image, such as 1920x1080 or 4096x2160        |
-| `Display Aspect Ratio` / `DAR` | The intended displayed shape of the image, such as 2.39:1                       |
-| `Pixel Aspect Ratio` / `PAR`   | The shape relationship of each pixel when displayed; square pixels have PAR 1:1 |
-| `Squeeze Ratio`                | The anamorphic compression factor, such as 1.33x, 1.5x, or 2x                   |
-
-A simplified relationship is:
-
-```text
-PAR = DAR / SAR
-```
-
-In ordinary square-pixel footage, the storage shape and display shape match directly. In anamorphic workflows, the recorded image may be stored squeezed and then displayed wider by applying a pixel aspect or desqueeze transform.
-
-Example:
-
-```text
-4:3 stored image + 2x anamorphic desqueeze -> roughly 2.66:1 display image
-```
-
-Modern workflows may use square pixels and simply apply a software desqueeze, but the conceptual idea is the same: the capture and display geometry are not identical.
-
-Rimell Anamorphic separates this into two different use cases:
-
-1. **Real Anamorphic Utility**: for footage that was genuinely captured squeezed and needs correct desqueeze/framing handling.
-2. **Spherical -> Anamorphic Look**: for normal spherical footage where the plugin should not literally desqueeze the image, because there is no squeezed source image to restore.
-
-This distinction matters. Desqueezing normal spherical footage would just stretch it. It would make people wider and distort the entire image in a blunt way. The default creative mode instead keeps the plate fundamentally usable while adding virtual anamorphic characteristics on top.
-
----
-
-### Object-to-image mapping
-
-At the simplest level, a lens maps object space to image space.
-
-A spherical lens usually has the same effective focal behaviour around the optical axis. Its image mapping is broadly constant with rotation around the centre. If a point is displaced left, right, up, or down from centre, the mapping is governed by the same radial behaviour.
-
-An anamorphic lens breaks that symmetry. It has different power in two orthogonal planes. The horizontal and vertical directions are not treated as interchangeable.
-
-This produces:
-
-* different effective focal lengths in the two axes
-* different magnification in the two axes
-* different distortion behaviour in the two axes
-* different aberration behaviour in the two axes
-* different focus and blur behaviour in the two axes
-
-A simple way to think about it:
-
-```text
-spherical lens:    x and y are treated similarly
-anamorphic lens:  x and y are treated differently
-```
-
-This is why Rimell Anamorphic contains axis-specific controls such as edge compression, vertical compensation, horizontal smear, tangential smear, squeeze ratio, and vertical sharpness compensation.
-
----
-
-### Cylindrical optics
-
-The classic anamorphic lens uses cylindrical optical surfaces. A spherical lens surface has curvature in both axes. A cylindrical surface has power mainly in one axis.
-
-That is the physical reason anamorphic lenses can compress or expand one dimension more than the other.
-
-A single cylindrical element can focus light differently in one plane than another, which introduces astigmatic behaviour unless the system is carefully corrected. Real anamorphic lens design is therefore much harder than simply adding a cylinder to a normal lens. The horizontal and vertical planes need to be made to image onto a compatible focal plane, otherwise one axis can be sharp while the other is not.
-
-This is also why real anamorphic zoom lenses are especially complex. A zoom lens already has moving variator and compensator groups to change focal length while keeping focus stable. An anamorphic zoom adds the requirement that the two orthogonal imaging planes maintain a consistent anamorphic ratio and remain optically usable through the zoom range.
-
-Rimell Anamorphic is not designing real lens groups, but its controls are based on the same broad idea: the image should be handled differently in the horizontal and vertical directions.
-
----
-
-### Squeeze and desqueeze
-
-A real anamorphic lens records a squeezed image. The squeeze ratio describes how much compression is applied.
-
-Common squeeze ratios include:
-
-| Ratio   | Typical use / effect                                                                                         |
-| ------- | ------------------------------------------------------------------------------------------------------------ |
-| `1.25x` | mild anamorphic widening, often for modern digital formats                                                   |
-| `1.33x` | common adapter ratio for 16:9 sensors aiming for a wider frame                                               |
-| `1.5x`  | stronger anamorphic character while staying manageable on digital sensors                                    |
-| `1.8x`  | closer to classic 2x feel with slightly less extreme handling                                                |
-| `2x`    | classic strong anamorphic squeeze, often associated with pronounced oval bokeh and widescreen cinema formats |
-
-With real anamorphic source footage, desqueeze is a corrective operation. It restores the intended geometry.
-
-With spherical source footage, desqueeze is usually the wrong operation. There is no squeezed image to undo. Stretching the image only makes the plate wider. It does not create genuine extra field of view, and it can make faces and objects look obviously wrong.
-
-That is why the default mode of Rimell Anamorphic is not a literal desqueeze of spherical footage. Instead, it creates a virtual anamorphic presentation by layering geometry, edge, highlight, flare, and chromatic behaviours over the original spherical plate.
-
----
-
-### Field of view and lost information
-
-A real anamorphic lens can capture a wider horizontal field of view onto a given sensor or film frame because the lens compresses that wider field into the recorded image.
-
-A post-production plugin cannot do that retroactively.
-
-If the camera did not record extra information at the left and right edges of the scene, Rimell Anamorphic cannot invent a real wider field of view. It can only:
-
-* crop to a wider aspect ratio
-* simulate horizontal expansion behaviour
-* warp or compress parts of the frame
-* create anamorphic-style edge and highlight treatment
-* add flares, bloom, bokeh approximation, vignetting, and chromatic behaviour
-
-This is an important limitation. The plugin can make spherical footage feel more anamorphic, but it cannot make it identical to having used a real anamorphic lens on set.
-
----
-
 ## Visual Differences Between Spherical and Anamorphic Images
 
 ### 1. Widescreen framing
@@ -241,15 +432,9 @@ However, widescreen framing alone is not anamorphic. A spherical lens can be cro
 
 Rimell Anamorphic includes aspect guides, safe area guides, letterbox preview, and output aspect choices because framing is part of the anamorphic workflow, even though framing alone is not the whole effect.
 
----
-
 ### 2. Elliptical bokeh
 
 Anamorphic lenses are associated with oval or elliptical out-of-focus highlights. A circular point of light can become vertically oval in the final desqueezed image.
-
-This happens because the optical system treats the two axes differently. The squeeze/desqueeze relationship and cylindrical elements affect how defocused points are shaped.
-
-Spherical lenses more commonly produce circular bokeh, modified by aperture blade shape, optical vignetting, cat-eye effects, and lens design.
 
 Rimell Anamorphic approximates this through:
 
@@ -260,21 +445,15 @@ Rimell Anamorphic approximates this through:
 * threshold scaling
 * bloom vignette dimming
 * cat-eye style edge dimming
-* optional depth-map driven focus falloff when a DaVinci Resolve AI Depth Map output is connected to the `Depth` input
+* optional depth-map driven focus falloff when a depth source is connected
 
 This remains an approximation rather than a physical lens solve. When no depth input is connected, the plugin detects and reshapes highlight regions from the plate. When a depth map is connected, the map drives focus-aware defocus, bloom scale, flare contribution, ghost response, and longitudinal CA strength.
-
----
 
 ### 3. Differential depth of field
 
 Because an anamorphic lens has different optical behaviour in the horizontal and vertical planes, depth-of-field behaviour can feel different from a spherical lens.
 
-The image may feel wide horizontally while retaining a different vertical field relationship. This is part of the reason anamorphic footage can feel spacious but still intimate. The exact behaviour depends on sensor size, focal length, squeeze ratio, aperture, focus distance, lens design, and how the lens is desqueezed.
-
 Rimell Anamorphic does not implement a physically complete depth-of-field model. Instead, it approximates the perceived result with edge falloff, focus distance response, edge blur, directional smear, oval highlight bloom, vertical sharpness compensation, and optional depth-map driven defocus.
-
----
 
 ### 4. Horizontal flares
 
@@ -284,25 +463,9 @@ They are also overused. A blue horizontal line is the cheapest shorthand for “
 
 Rimell Anamorphic includes directional streak flares, but the plugin is built so flare is only one component of the look. The effect is more convincing when flare works with geometry, edge softness, highlight bloom, CA, and vignette rather than sitting on top as an obvious graphic overlay.
 
-Implemented controls include:
-
-* flare angle
-* flare length
-* flare intensity
-* flare colour
-* flare threshold
-* flare density
-* flare span
-* flare falloff
-* highlight-driven response shaping
-
----
-
 ### 5. Veiling glare and bloom
 
 Anamorphic images often show a soft wash around bright sources, depending on the lens, coatings, exposure, and lighting. This can lift the local blacks, soften contrast around highlights, and create a creamy or atmospheric image.
-
-This is different from a clean digital glow. Real glare interacts with contrast and colour in a messy optical way.
 
 Rimell Anamorphic models this through:
 
@@ -314,60 +477,31 @@ Rimell Anamorphic models this through:
 * threshold scaling
 * sampling/ring controls
 
-Black-lift protection exists because uncontrolled veil can make an image look muddy very quickly.
-
----
-
 ### 6. Ghosting and internal reflections
 
 Bright lights inside or near the frame can bounce between optical elements, producing secondary reflections or ghost images.
 
-This is not unique to anamorphic lenses, but anamorphic systems can produce distinctive ghosting because their optical path is more complex and axis-dependent.
-
-Rimell Anamorphic includes ghost reflections with:
-
-* count
-* spread
-* tint
-* intensity
-
-The goal is controlled optical suggestion, not a physically perfect multi-element ray-traced ghost model.
-
----
+Rimell Anamorphic includes ghost reflections with count, spread, tint, and intensity. The goal is controlled optical suggestion, not a physically perfect multi-element ray-traced ghost model.
 
 ### 7. Barrel, pincushion, mustache, and axis-specific distortion
 
-Spherical lenses often show radial distortion:
-
-| Distortion   | Description                                                                                          |
-| ------------ | ---------------------------------------------------------------------------------------------------- |
-| `Barrel`     | straight lines bow outward from the centre                                                           |
-| `Pincushion` | straight lines pinch inward toward the centre                                                        |
-| `Mustache`   | distortion changes character across the radius, often barrel in one region and pincushion in another |
-
-Anamorphic lenses can include those behaviours, but the distortion is often more complex because the horizontal and vertical axes do not behave the same.
-
-This is where an anamorphic or aximorphic distortion model becomes useful: rather than applying one radial distortion equally, the plugin can shape the image differently by axis.
+Spherical lenses often show radial distortion. Anamorphic lenses can include those behaviours, but the distortion is often more complex because the horizontal and vertical axes do not behave the same.
 
 Rimell Anamorphic currently includes:
 
+* OpenLensIO-informed radial distortion coefficients at profile level
 * barrel distortion
 * mustache distortion
+* decentering/asymmetric distortion direction for future profile work
 * vertical compensation
 * edge compression
 * centre protection
 * width compensation behaviour
 * creative warp mode
 
-This is one of the most important parts of the plugin because it moves the effect away from a simple overlay and into image-space remapping.
-
----
-
 ### 8. Edge softness and field falloff
 
 Many lenses are sharper in the centre than the edges. Anamorphic lenses can have especially distinctive edge behaviour because aberrations differ across the two axes.
-
-The edge may appear stretched, smeared, softer, or less stable than the centre. This can be attractive when subtle because it draws attention toward the subject and makes the frame feel less digitally flat.
 
 Rimell Anamorphic includes:
 
@@ -380,13 +514,9 @@ Rimell Anamorphic includes:
 
 Centre protection is important here. If the entire image is softened evenly, it does not feel like lens character. It just looks blurred.
 
----
-
 ### 9. Chromatic aberration
 
 Chromatic aberration occurs when different wavelengths of light do not align perfectly. It can produce coloured fringing around high-contrast edges or near the edge of the frame.
-
-It is not exclusive to anamorphic lenses, but it is part of the broader optical character that many people associate with vintage or imperfect cinema glass.
 
 Rimell Anamorphic includes:
 
@@ -396,15 +526,11 @@ Rimell Anamorphic includes:
 * longitudinal CA approximation
 * focus/edge-dependent channel softness
 
-Subtle CA can help sell the illusion of an optical process. Heavy CA quickly looks like a bad filter.
-
----
+Future OpenLensIO-style profile work should model lateral CA with three separate distortion parameter sets, one for each colour channel.
 
 ### 10. Vignetting, light falloff, and cat-eye edge behaviour
 
 Real lenses often darken toward the edges. Wide apertures and optical/mechanical vignetting can also reshape out-of-focus highlights near the frame edge into cat-eye forms.
-
-Anamorphic systems can make this feel more elliptical or axis-dependent.
 
 Rimell Anamorphic includes:
 
@@ -415,9 +541,7 @@ Rimell Anamorphic includes:
 * cat-eye style dimming
 * bloom vignette dimming
 
-This is partly aesthetic and partly corrective: the edges of the frame should often feel optically different from the centre.
-
----
+Future profile work should separate OpenLensIO-style optical vignetting from creative oval vignetting.
 
 ### 11. Anamorphic mumps
 
@@ -426,8 +550,6 @@ This is partly aesthetic and partly corrective: the edges of the frame should of
 Modern high-end anamorphic lenses often try to avoid this. For a plugin, mumps should therefore be optional, not a default.
 
 Rimell Anamorphic includes close-focus centre squeeze variation and width compensation behaviour so this can be used as a controlled vintage defect rather than an unavoidable problem.
-
----
 
 ### 12. Focus breathing
 
@@ -455,13 +577,15 @@ wide framing + axis-specific geometry + edge falloff + oval highlight shaping + 
 
 Rimell Anamorphic is built around a stronger version of the second approach: the geometry, edge behaviour, chromatic aberration, bloom, flare, ghosts, and vignette all reference a shared virtual lens map where practical.
 
-It uses an OFX filter architecture so the effect can be applied directly to footage in a host application. The current implementation can also take an optional `Depth` clip. In DaVinci Resolve, generate the depth plate with Resolve's AI Depth Map tool and connect that output to the Rimell Anamorphic `Depth` input on the OFX node. The plugin still infers lens calibration from controls rather than measured lens profiles or STMaps.
+The current implementation can also take an optional `Depth` clip. In DaVinci Resolve, generate the depth plate with Resolve's AI Depth Map tool and connect that output to the Rimell Anamorphic `Depth` input on the OFX node.
+
+The plugin still infers lens calibration from controls rather than measured lens profiles, OpenLensIO payloads, or STMaps.
 
 ---
 
 ## Current Functionality
 
-Rimell Anamorphic is currently focused on converting normal spherical footage into a stylized, already-desqueezed anamorphic-looking image. It also includes utility controls for genuine anamorphic source footage, but the main creative path assumes the input was shot spherical.
+Rimell Anamorphic is currently focused on converting normal spherical footage into a stylised, already-desqueezed anamorphic-looking image. It also includes utility controls for genuine anamorphic source footage, but the main creative path assumes the input was shot spherical.
 
 The plugin currently implements the following behaviour:
 
@@ -492,6 +616,15 @@ These presets are exposed as starting points through the normal OFX parameter se
   * squeeze mode options: `Off`, `Squeeze`, `Desqueeze` for the real anamorphic utility and creative warp paths
   * squeeze ratio control
   * virtual horizontal expansion behaviour, formerly horizontal FOV boost, influenced by virtual focal length
+* OpenLensIO-informed internal geometry parameters include:
+
+  * sensor width / height normalisation
+  * virtual focal length `F`
+  * distortion centre offset `deltaC`
+  * perspective offset `deltaP`
+  * radial distortion coefficients `k1...k6`
+  * decentering coefficients `p1`, `p2`
+  * overscan / ROI expansion values
 * Depth-map controls include:
 
   * `Use Depth Map`, which enables the optional `Depth` input when connected
@@ -503,6 +636,8 @@ These presets are exposed as starting points through the normal OFX parameter se
 ### 2. Virtual anamorphic geometry and axis-specific warping
 
 * Barrel and mustache distortion
+* OpenLensIO-informed radial distortion model direction
+* Decentering/asymmetric distortion direction for future profile use
 * Vertical compensation
 * Edge compression
 * Close-focus centre squeeze variation, mumps-style shaping
@@ -522,6 +657,7 @@ These presets are exposed as starting points through the normal OFX parameter se
 * Lateral chromatic aberration with pixel scaling
 * Edge-only CA option
 * Longitudinal CA approximation, using focus/edge dependent channel softness
+* Future profile direction: per-channel distortion parameter sets for red, green, and blue
 
 ### 5. Highlight and flare response
 
@@ -542,6 +678,7 @@ These presets are exposed as starting points through the normal OFX parameter se
 * Asymmetry and corner bias
 * Edge highlight vignette, cat-eye style dimming
 * Bloom vignette dimming
+* Future OpenLensIO-style optical vignetting coefficients `a1...a3`
 
 ### 8. Scope framing, aspect tools, and guides
 
@@ -565,7 +702,7 @@ These presets are exposed as starting points through the normal OFX parameter se
   * `Preview`
   * `Final`
 * Quality mode scales expensive sampling paths for flare, bloom, blur, ghosts, and chromatic work
-* Control groups are organized as Core, Depth Map, Geometry, Highlights / Flares, Edge / CA, and Framing where the host exposes OFX parameter groups
+* Control groups are organised as Core, Depth Map, Geometry, Highlights / Flares, Edge / CA, and Framing where the host exposes OFX parameter groups
 
 ---
 
@@ -577,27 +714,34 @@ These presets are exposed as starting points through the normal OFX parameter se
 * The plugin can simulate anamorphic traits, but it cannot reconstruct horizontal scene information that was never captured in-frame.
 * Oval highlight behaviour in this workflow is an approximation of anamorphic highlight response, not a physically complete depth-aware bokeh reconstruction.
 * Flare, ghosting, glare, CA, vignette, and blur are image-processing approximations rather than calibrated ray-traced simulations of a measured optical assembly.
-* The plugin does not currently know the real lens, aperture, subject distance, or sensor size. It can use an external depth map for per-pixel focus separation, but that map is still an estimated image-space guide.
-* The plugin does not currently import measured lens profiles, export STMaps, or blend external view/footage maps.
+* The plugin does not currently know the real lens, aperture, subject distance, or sensor size unless those values are provided through a future profile layer.
+* It can use an external depth map for per-pixel focus separation, but that map is still an estimated image-space guide.
+* The plugin does not currently import measured OpenLensIO lens payloads, export OpenLensIO profiles, import STMaps, or export STMaps.
+* The profile model is OpenLensIO-informed, not OpenLensIO-complete.
 
 ---
 
 ## Implementation Notes: How the Effect Maps to Lens Concepts
 
-| Lens concept                  | Real optical behaviour                                  | Rimell Anamorphic approximation                                                                            |
-| ----------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Anamorphic squeeze            | Horizontal compression during capture, desqueeze later  | Real utility mode supports squeeze/desqueeze; creative mode avoids stretching spherical footage by default |
-| Axis-dependent mapping        | Different power in horizontal and vertical planes       | Shared procedural lens map, Anamorphic Transfer, Axis Warp, edge compression, vertical compensation       |
-| Cylindrical optical character | One-axis optical power and axis-dependent aberration    | Horizontal/tangential smear, vertical sharpness compensation, oval highlight shaping                       |
-| Elliptical bokeh              | Defocused points become vertically oval after desqueeze | Highlight isolation, oval bloom stretch, rotation, edge falloff, cat-eye dimming                           |
-| Depth of field                | Focus separation depends on subject distance            | Optional `Depth` input drives focus falloff, defocus radius, bloom scale, flare/ghost response, and longitudinal CA |
-| Linear flare                  | Bright sources produce horizontal streaks               | Directional streak flare system with angle, span, threshold, density, colour, falloff, and identity scale |
-| Veiling glare                 | Optical wash and contrast loss around strong light      | Bloom/veil, centre veil, highlight cream, black-lift protection                                            |
-| Ghosting                      | Internal element reflections                            | Count/spread/tint/intensity ghost model with anamorphic axis bias                                          |
-| Distortion                    | Barrel, pincushion, mustache, axis-dependent warp       | Barrel/mustache distortion, centre protection, edge compression                                            |
-| Chromatic aberration          | Wavelength-dependent misregistration                    | Lateral CA, edge-only CA, longitudinal CA approximation                                                    |
-| Mumps                         | Close-focus anamorphic widening / astigmatic behaviour  | Close-focus centre squeeze variation and width compensation                                                |
-| Breathing                     | Framing/magnification changes during focus pulls        | Focus-distance based breathing response                                                                    |
+| Lens concept                  | Real optical behaviour                                               | Rimell Anamorphic approximation                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| OpenLensIO image coordinates  | centred sensor/screen coordinates in mm                              | centred normalised image-space mapping layer                                                                        |
+| OpenLensIO radial distortion  | Brown-Conrady radial terms `k1...k6`                                 | barrel/mustache controls and future profile coefficients                                                            |
+| OpenLensIO decentering        | `p1`, `p2` distortion terms                                          | future asymmetric/decentred distortion profile support                                                              |
+| OpenLensIO centre offsets     | `deltaC`, `deltaP`                                                   | future distortion centre / perspective offset controls                                                              |
+| OpenLensIO overscan           | render larger image to cover distortion                              | OFX ROI expansion and render overscan planning                                                                      |
+| OpenLensIO vignetting         | polynomial optical vignetting                                        | future profile coefficients; current creative oval vignette                                                         |
+| Anamorphic squeeze            | horizontal compression during capture, desqueeze later               | real utility mode supports squeeze/desqueeze; creative mode avoids blunt stretching spherical footage by default    |
+| Axis-dependent mapping        | different power in horizontal and vertical planes                    | shared procedural lens map, Anamorphic Transfer, Axis Warp, edge compression, vertical compensation                 |
+| Cylindrical optical character | one-axis optical power and axis-dependent aberration                 | horizontal/tangential smear, vertical sharpness compensation, oval highlight shaping                                |
+| Elliptical bokeh              | defocused points become vertically oval after desqueeze              | highlight isolation, oval bloom stretch, rotation, edge falloff, cat-eye dimming                                    |
+| Depth of field                | focus separation depends on subject distance, aperture, focal length | optional `Depth` input drives focus falloff, defocus radius, bloom scale, flare/ghost response, and longitudinal CA |
+| Linear flare                  | bright sources produce horizontal streaks                            | directional streak flare system with angle, span, threshold, density, colour, falloff, and identity scale           |
+| Veiling glare                 | optical wash and contrast loss around strong light                   | bloom/veil, centre veil, highlight cream, black-lift protection                                                     |
+| Ghosting                      | internal element reflections                                         | count/spread/tint/intensity ghost model with anamorphic axis bias                                                   |
+| Chromatic aberration          | wavelength-dependent misregistration                                 | lateral CA, edge-only CA, longitudinal CA approximation; future per-channel distortion sets                         |
+| Mumps                         | close-focus anamorphic widening / astigmatic behaviour               | close-focus centre squeeze variation and width compensation                                                         |
+| Breathing                     | framing/magnification changes during focus pulls                     | focus-distance based breathing response                                                                             |
 
 ---
 
@@ -615,7 +759,7 @@ These presets are exposed as starting points through the normal OFX parameter se
 * Frame threading enabled
 * Tiled rendering disabled
 * Temporal clip access disabled
-* Identity optimization: if Mix is 0, the effect reports source identity
+* Identity optimisation: if Mix is 0, the effect reports source identity
 * ROI expansion is implemented to account for flare, bloom, blur, depth defocus, and CA sampling footprint
 * CPU render path supports 8-bit, 16-bit, and 32-bit float RGBA
 * On Apple builds, a Metal render path is advertised for 32-bit float RGBA when the host supplies an OFX Metal command queue
@@ -627,14 +771,18 @@ These presets are exposed as starting points through the normal OFX parameter se
 
 The current version does not include:
 
-* True physically based lens simulation
-* Measured lens profile system
-* Lens calibration workflow
+* strict OpenLensIO file import/export
+* true physically based lens simulation
+* measured lens profile system
+* lens calibration workflow
 * STMap import/export workflow
-* Built-in preset browser beyond the current `Look Preset` parameter
-* Multi-clip workflows beyond source/output filter processing
-* Real measured lens model interchange
-* Physically accurate internal reflection path tracing
+* built-in preset browser beyond the current `Look Preset` parameter
+* multi-clip workflows beyond source/output/depth filter processing
+* real measured lens model interchange
+* physically accurate internal reflection path tracing
+* calibrated aperture / circle-of-confusion modelling
+* measured entrance pupil behaviour
+* practical evaluation of multiple anamorphic distortion models
 
 ---
 
@@ -644,6 +792,8 @@ The current plugin is an OFX filter effect, not a full lens distortion interchan
 
 Possible future features:
 
+* OpenLensIO JSON import for measured/synthetic lens profiles
+* Rimell profile export with OpenLensIO-informed lens blocks
 * lens profile presets for common anamorphic styles
 * STMap export for geometry-only workflows
 * STMap import for measured lens distortion
@@ -654,11 +804,12 @@ Possible future features:
 * separate utility plugin for desqueeze/framing only
 * real-time preview optimisations
 
-One useful long-term model would be to separate the plugin into two layers:
+One useful long-term model would be to separate the plugin into three layers:
 
 ```text
 1. Creative optical character: flare, bloom, ghosting, CA, edge softness, bokeh approximation
 2. Distortion/profile mapping: squeeze, desqueeze, STMap-style remapping, measured or synthetic lens profiles
+3. OpenLensIO interchange: profile import/export, lens-state metadata, overscan, vignetting, CA, and calibrated distortion
 ```
 
 That would keep the current plugin usable as a creative look tool while making room for a more technical lens-mapping workflow later.
@@ -677,6 +828,7 @@ That would keep the current plugin usable as a creative look tool while making r
 * For dialogue or face-heavy footage, use centre protection and width compensation carefully. Too much close-focus shaping can create an ugly mumps effect.
 * For night footage, lower flare thresholds and stronger veil may work well, but clipped practicals can produce harsh results.
 * For daylight footage, edge falloff, subtle distortion, vignette, and mild CA may be more useful than obvious streak flare.
+* Treat OpenLensIO support as a technical/profile direction, not a guarantee that the current look is a measured real lens.
 
 ---
 
@@ -734,14 +886,6 @@ Use this when the user wants lens shape without obvious flares.
 
 ---
 
-## Project Name
-
-Plugin label: Rimell Anamorphic
-
-OFX grouping: Rimell / Lens
-
----
-
 ## Build
 
 Configure and build:
@@ -767,6 +911,16 @@ After installation, restart your host application. The effect is labelled Rimell
 
 ---
 
+## Project Name
+
+Plugin label: Rimell Anamorphic
+
+OFX grouping: Rimell / Lens
+
+Internal profile direction: OpenLensIO-informed Rimell Anamorphic Profile
+
+---
+
 ## License
 
 To be decided.
@@ -775,6 +929,8 @@ To be decided.
 
 ## Disclaimer
 
-Rimell Anamorphic is an independent plugin project and is not affiliated with ARRI, ZEISS, Panavision, Blackmagic Design, DaVinci Resolve, SPIE, FrancoAngeli, or other lens/software manufacturers.
+Rimell Anamorphic is an independent plugin project and is not affiliated with ARRI, ZEISS, Panavision, Blackmagic Design, DaVinci Resolve, SMPTE, SPIE, FrancoAngeli, or other lens/software manufacturers.
 
 The plugin approximates visual characteristics associated with anamorphic optics. It is not a physically complete replacement for shooting with real anamorphic lenses.
+
+OpenLensIO references in this README describe an implementation direction and profile-alignment strategy. They do not imply that the current plugin is a complete, validated, or officially conformant OpenLensIO implementation.
