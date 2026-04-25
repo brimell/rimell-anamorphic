@@ -2,6 +2,7 @@
 
 #include "Constants.h"
 #include "HostSuites.h"
+#include "LensMap.h"
 #include "Parameters.h"
 #include "PixelAccess.h"
 
@@ -17,50 +18,13 @@ namespace {
 
 template <typename T>
 Pixel warpedSourceSample(const Image &source, float dstX, float dstY, int width, int height,
-                         const RenderParams &params, float caOffset) {
-  const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
-  const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
-  const float halfW = std::max(1.0f, static_cast<float>(width) * 0.5f);
-  const float halfH = std::max(1.0f, static_cast<float>(height) * 0.5f);
-
-  float nx = (dstX - cx) / halfW;
-  float ny = (dstY - cy) / halfH;
-  const float radius2 = nx * nx + ny * ny;
-  const float radius = std::sqrt(radius2);
-
-  const float breathe = 1.0f + params.breathingAmount * (0.5f - params.focusDistance) * params.breathingScale;
-  nx /= std::max(0.01f, breathe);
-  ny /= std::max(0.01f, breathe);
-
-  const float distortion = 1.0f + params.barrel * radius2 + params.mustache * radius2 * radius2;
-  nx *= distortion;
-  ny *= distortion * (1.0f - params.verticalCompensation * radius2 * params.verticalCompensationScale);
-
-  const bool useUtilityGeometry = params.inputMode == 1 || params.inputMode == 2;
-  if (useUtilityGeometry) {
-    const float ratio = std::max(0.1f, params.squeezeRatio);
-    if (params.squeezeMode == 1) {
-      nx *= ratio;
-    } else if (params.squeezeMode == 2) {
-      nx /= ratio;
-    }
-  }
-
-  const float fovScale = 1.0f + params.horizontalFovBoost * (70.0f / std::max(10.0f, params.virtualFocalLength));
-  nx /= std::max(0.05f, fovScale);
-
-  const float centerWeight = smoothstep(0.9f, 0.0f, radius);
-  const float mumps = (params.closeFocusMumps - params.faceWidthCompensation) * centerWeight *
-                      smoothstep(1.0f, 0.0f, params.focusDistance);
-  nx /= std::max(0.1f, 1.0f + mumps * params.mumpsScale);
-
-  nx *= 1.0f + params.edgeCompression * radius2 * params.edgeCompressionScale;
-
-  const float ca = caOffset * radius * (params.edgeOnlyCA > 0.5f ? smoothstep(0.2f, 1.0f, radius) : 1.0f);
-  const float sx = cx + (nx + ca) * halfW;
-  const float sy = cy + ny * halfH;
-
-  return sampleBilinear<T>(source, sx, sy);
+                         const RenderParams &params, float caPixels) {
+  const LensMap map = buildLensMap(dstX, dstY, source, width, height, params);
+  Vec2 sourcePixel = lensMapToSourcePixel(map, source, width, height);
+  const float caMask = params.edgeOnlyCA > 0.5f ? smoothstep(0.2f, 1.0f, map.radius) : 1.0f;
+  sourcePixel.x += map.caDirection.x * caPixels * caMask;
+  sourcePixel.y += map.caDirection.y * caPixels * caMask;
+  return sampleBilinear<T>(source, sourcePixel.x, sourcePixel.y);
 }
 
 float qualityScale(const RenderParams &params) {
@@ -110,12 +74,10 @@ Pixel channelDefocusSample(const Image &source, float x, float y, int width, int
 template <typename T>
 Pixel opticalBaseSample(const Image &source, float x, float y, int width, int height,
                         const RenderParams &params) {
-  const float halfW = std::max(1.0f, static_cast<float>(width) * 0.5f);
   const float caPixels = params.lateralCA * params.lateralCAPixelScale;
-  const float caNormalised = caPixels / halfW;
   Pixel base = warpedSourceSample<T>(source, x, y, width, height, params, 0.0f);
-  Pixel red = warpedSourceSample<T>(source, x, y, width, height, params, caNormalised);
-  Pixel blue = warpedSourceSample<T>(source, x, y, width, height, params, -caNormalised);
+  Pixel red = warpedSourceSample<T>(source, x, y, width, height, params, caPixels);
+  Pixel blue = warpedSourceSample<T>(source, x, y, width, height, params, -caPixels);
   base.r = red.r;
   base.b = blue.b;
 
@@ -144,8 +106,9 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
   const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
   const float nx = (x - cx) / std::max(1.0f, width * 0.5f);
   const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
-  const float radius = std::sqrt(nx * nx + ny * ny);
-  const float edge = smoothstep(std::max(0.0f, 1.0f - params.radialFalloff), 1.15f, radius);
+  const LensMap map = buildLensMap(x, y, source, width, height, params);
+  const float radius = std::max(map.radius, std::sqrt(nx * nx + ny * ny));
+  const float edge = std::max(map.edgeMask, smoothstep(std::max(0.0f, 1.0f - params.radialFalloff), 1.15f, radius));
 
   Pixel result = base;
 
@@ -208,8 +171,14 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
 }
 
 template <typename T>
-float highlightAt(const Image &source, float x, float y, float threshold) {
-  const Pixel p = sampleBilinear<T>(source, x, y);
+Pixel mappedSample(const Image &source, float x, float y, int width, int height, const RenderParams &params) {
+  return warpedSourceSample<T>(source, x, y, width, height, params, 0.0f);
+}
+
+template <typename T>
+float highlightAt(const Image &source, float x, float y, int width, int height, const RenderParams &params,
+                  float threshold) {
+  const Pixel p = mappedSample<T>(source, x, y, width, height, params);
   return smoothstep(threshold, 1.0f, luminance(p));
 }
 
@@ -224,7 +193,8 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
   const float sampleScale = qualityScale(params);
   const int flareSteps =
       std::max(1, static_cast<int>(std::round((2.0f + params.flareLength * params.flareStepDensity) * sampleScale)));
-  const float flareSpan = params.flareLength * static_cast<float>(width) * params.flareSpanScale;
+  const float flareSpan = params.flareLength * static_cast<float>(width) * params.flareSpanScale *
+                          lensIdentityFlareScale(params);
   if (params.flareIntensity > 0.001f && flareSpan > 1.0f) {
     for (int i = -flareSteps; i <= flareSteps; ++i) {
       if (i == 0) {
@@ -233,7 +203,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float t = static_cast<float>(i) / static_cast<float>(flareSteps);
       const float sx = x + dirX * t * flareSpan;
       const float sy = y + dirY * t * flareSpan;
-      const float h = highlightAt<T>(source, sx, sy, params.flareThreshold);
+      const float h = highlightAt<T>(source, sx, sy, width, height, params, params.flareThreshold);
       const float w = std::exp(-std::abs(t) * params.flareFalloff) * h * params.flareIntensity;
       add.r += params.flareColour.r * w;
       add.g += params.flareColour.g * w;
@@ -246,7 +216,8 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
     const float rotation = params.bokehRotation * kPi / 180.0f;
     const float cosR = std::cos(rotation);
     const float sinR = std::sin(rotation);
-    const float stretch = 1.0f + params.bokehStretch * params.bokehStretchScale;
+    const float stretch = (1.0f + params.bokehStretch * params.bokehStretchScale) *
+                          lensIdentityBloomScale(params);
     const int rings = std::max(1, static_cast<int>(std::round(static_cast<float>(params.bloomRings) * sampleScale)));
     const int samplesPerRing =
         std::max(3, static_cast<int>(std::round(static_cast<float>(params.bloomSamplesPerRing) * sampleScale)));
@@ -260,7 +231,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
         float oy = std::sin(a) * ringRadius * stretch;
         const float rx = ox * cosR - oy * sinR;
         const float ry = ox * sinR + oy * cosR;
-        const Pixel sample = sampleBilinear<T>(source, x + rx, y + ry);
+        const Pixel sample = mappedSample<T>(source, x + rx, y + ry, width, height, params);
         const float h = smoothstep(params.flareThreshold * params.bloomThresholdScale, 1.0f, luminance(sample));
         const float w = h / static_cast<float>(ring);
         bloom.r += sample.r * w;
@@ -273,11 +244,8 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       bloom.r /= total;
       bloom.g /= total;
       bloom.b /= total;
-      const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
-      const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
-      const float nx = (x - cx) / std::max(1.0f, width * 0.5f);
-      const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
-      const float edge = smoothstep(0.35f, 1.1f, std::sqrt(nx * nx + ny * ny));
+      const LensMap map = buildLensMap(x, y, source, width, height, params);
+      const float edge = std::max(map.edgeMask, smoothstep(0.35f, 1.1f, map.radius));
       const float bokehEdgeKeep = 1.0f - edge * params.bokehEdgeFalloff * params.bloomEdgeKeepScale;
       const float protect = lerp(1.0f, clamp01(luminance(base) * 2.0f), params.blackLiftProtection);
       const float amount =
@@ -299,9 +267,9 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
         params.renderQuality == 0 ? std::min(params.ghostCount, 3) : (params.renderQuality == 2 ? params.ghostCount : std::min(params.ghostCount, 6));
     for (int i = 1; i <= ghostCount; ++i) {
       const float scale = 1.0f + params.ghostSpread * static_cast<float>(i);
-      const float sx = cx - (x - cx) * scale;
-      const float sy = cy - (y - cy) * scale;
-      const Pixel ghost = sampleBilinear<T>(source, sx, sy);
+      const float sx = cx - (x - cx) * scale * lensIdentityGhostScaleX(params);
+      const float sy = cy - (y - cy) * scale * lensIdentityGhostScaleY(params);
+      const Pixel ghost = mappedSample<T>(source, sx, sy, width, height, params);
       const float h = smoothstep(params.flareThreshold, 1.0f, luminance(ghost));
       const float w = h * (params.ghostIntensity / static_cast<float>(i)) * tintShift;
       add.r += ghost.r * params.ghostTint.r * w;
@@ -479,9 +447,11 @@ std::string clipPropertyName(const char *prefix, const char *clipName) {
 }
 
 float roiPaddingPixels(const RenderParams &params) {
-  const float flarePadding = params.flareIntensity > 0.001f ? params.flareLength * params.flareSpanScale * 512.0f : 0.0f;
+  const float flarePadding = params.flareIntensity > 0.001f
+                                 ? params.flareLength * params.flareSpanScale * lensIdentityFlareScale(params) * 512.0f
+                                 : 0.0f;
   const float bloomPadding = (params.veil > 0.001f || params.highlightCream > 0.001f)
-                                 ? params.bloomRadius * params.bloomPixelScale
+                                 ? params.bloomRadius * params.bloomPixelScale * lensIdentityBloomScale(params)
                                  : 0.0f;
   const float edgePadding = std::max(params.edgeBlur * params.edgeBlurPixels,
                                      (params.tangentialSmear + params.horizontalSmear) * params.smearPixels);

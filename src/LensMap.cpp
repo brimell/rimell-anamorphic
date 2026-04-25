@@ -97,6 +97,10 @@ float lensIdentityGhostScaleY(const RenderParams &params) {
 
 LensMap buildLensMap(float dstX, float dstY, const Image &source, int width, int height,
                      const RenderParams &params) {
+  // Rimell Anamorphic does not literally desqueeze spherical footage. It builds
+  // a synthetic anamorphic view map, then derives geometry, edge behaviour,
+  // chromatic separation, highlight bloom, flare, and ghosting from that shared
+  // virtual lens mapping.
   const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
   const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
   const float halfW = std::max(1.0f, static_cast<float>(width) * 0.5f);
