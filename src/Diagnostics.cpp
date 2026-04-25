@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits.h>
 #include <mutex>
 #include <thread>
 
@@ -49,11 +50,32 @@ void initLogConfig() {
     }
   }
 
-  static const char *kLogFilePath = "/tmp/RimellAnamorphic.log";
-  FILE *file = std::fopen(kLogFilePath, "a");
+  const char *logPath = std::getenv("RIMELL_LOG_FILE");
+  if (!logPath || !*logPath) {
+    logPath = "/tmp/RimellAnamorphic.log";
+  }
+
+  FILE *file = std::fopen(logPath, "a");
+  if (!file) {
+    const char *home = std::getenv("HOME");
+    if (home && *home) {
+      char fallbackPath[PATH_MAX];
+      const int written = std::snprintf(fallbackPath,
+                                        sizeof(fallbackPath),
+                                        "%s/Library/Logs/RimellAnamorphic.log",
+                                        home);
+      if (written > 0 && static_cast<size_t>(written) < sizeof(fallbackPath)) {
+        file = std::fopen(fallbackPath, "a");
+      }
+    }
+  }
+
   if (file) {
+    std::setvbuf(file, nullptr, _IOLBF, 0);
     gConfig.stream = file;
     gConfig.ownsStream = true;
+  } else if (gConfig.stream) {
+    std::setvbuf(gConfig.stream, nullptr, _IOLBF, 0);
   }
 }
 

@@ -663,6 +663,9 @@ bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *ima
     return false;
   }
 
+  *imageHandle = nullptr;
+  *image = {};
+
   if (gEffectSuite->clipGetImage(clip, time, nullptr, imageHandle) != kOfxStatOK || !*imageHandle) {
     return false;
   }
@@ -793,9 +796,9 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
   OfxPropertySetHandle sourceImageHandle = nullptr;
   OfxPropertySetHandle depthImageHandle = nullptr;
   OfxPropertySetHandle outputImageHandle = nullptr;
-  Image source;
-  Image depth;
-  Image output;
+  Image source{};
+  Image depth{};
+  Image output{};
   DepthImage depthImage;
   OfxStatus status = kOfxStatOK;
 
@@ -873,12 +876,12 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                   depthClipIsConnected ? 1 : 0,
                   depthImageFetched ? 1 : 0,
                   depthImageHandle,
-                  depth.data,
-                  depth.rowBytes,
-                  depth.bounds.x1,
-                  depth.bounds.y1,
-                  depth.bounds.x2,
-                  depth.bounds.y2);
+              depthImageFetched ? depth.data : nullptr,
+              depthImageFetched ? depth.rowBytes : 0,
+              depthImageFetched ? depth.bounds.x1 : 0,
+              depthImageFetched ? depth.bounds.y1 : 0,
+              depthImageFetched ? depth.bounds.x2 : 0,
+              depthImageFetched ? depth.bounds.y2 : 0);
             char *depthBitDepth = nullptr;
             char *depthComponents = nullptr;
             if (hasDepth) {
