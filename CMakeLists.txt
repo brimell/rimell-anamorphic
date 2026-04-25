@@ -49,6 +49,16 @@ add_library(${OFX_PLUGIN_NAME} MODULE
   src/RimellAnamorphic.cpp
 )
 
+if(APPLE)
+  enable_language(OBJCXX)
+  target_sources(${OFX_PLUGIN_NAME} PRIVATE src/MetalRender.mm)
+  target_link_libraries(${OFX_PLUGIN_NAME} PRIVATE
+    "-framework Metal"
+    "-framework Foundation"
+    "-framework QuartzCore"
+  )
+endif()
+
 target_include_directories(${OFX_PLUGIN_NAME} PRIVATE
   "${openfx_SOURCE_DIR}/include"
 )

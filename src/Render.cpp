@@ -3,9 +3,11 @@
 #include "Constants.h"
 #include "HostSuites.h"
 #include "LensMap.h"
+#include "MetalRender.h"
 #include "Parameters.h"
 #include "PixelAccess.h"
 
+#include "ofxGPURender.h"
 #include "ofxPixels.h"
 
 #include <algorithm>
@@ -446,6 +448,24 @@ std::string clipPropertyName(const char *prefix, const char *clipName) {
   return name;
 }
 
+bool metalEnabled(OfxPropertySetHandle inArgs, void **commandQueue) {
+#ifdef __APPLE__
+  int enabled = 0;
+  if (!inArgs || !commandQueue ||
+      gPropertySuite->propGetInt(inArgs, kOfxImageEffectPropMetalEnabled, 0, &enabled) != kOfxStatOK ||
+      enabled == 0) {
+    return false;
+  }
+  return gPropertySuite->propGetPointer(inArgs, kOfxImageEffectPropMetalCommandQueue, 0, commandQueue) ==
+             kOfxStatOK &&
+         *commandQueue != nullptr;
+#else
+  (void)inArgs;
+  (void)commandQueue;
+  return false;
+#endif
+}
+
 float roiPaddingPixels(const RenderParams &params) {
   const float flarePadding = params.flareIntensity > 0.001f
                                  ? params.flareLength * params.flareSpanScale * lensIdentityFlareScale(params) * 512.0f
@@ -506,8 +526,13 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
           status = kOfxStatErrUnsupported;
         } else {
           const RenderParams params = readParams(instance);
-
-          if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
+          void *metalCommandQueue = nullptr;
+          const bool useMetal = hasSource && metalEnabled(inArgs, &metalCommandQueue);
+          if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
+            status = renderMetalFloat(metalCommandQueue, source, output, renderWindow, params);
+          } else if (useMetal) {
+            status = kOfxStatGPURenderFailed;
+          } else if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
             if (hasSource) {
               status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params);
             } else {

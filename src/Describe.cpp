@@ -3,6 +3,8 @@
 #include "HostSuites.h"
 #include "ParameterDefinition.h"
 
+#include "ofxGPURender.h"
+
 namespace rimell {
 
 OfxStatus describe(OfxImageEffectHandle effect) {
@@ -22,6 +24,10 @@ OfxStatus describe(OfxImageEffectHandle effect) {
                                 kOfxImageEffectRenderFullySafe);
   gPropertySuite->propSetInt(props, kOfxImageEffectPropSupportsTiles, 0, 0);
   gPropertySuite->propSetInt(props, kOfxImageEffectPropTemporalClipAccess, 0, 0);
+  gPropertySuite->propSetString(props, kOfxImageEffectPropCPURenderSupported, 0, "true");
+#ifdef __APPLE__
+  gPropertySuite->propSetString(props, kOfxImageEffectPropMetalRenderSupported, 0, "true");
+#endif
   return kOfxStatOK;
 }
 
