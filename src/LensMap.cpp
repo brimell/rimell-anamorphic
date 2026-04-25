@@ -123,15 +123,16 @@ LensMap buildLensMap(float dstX, float dstY, const Image &source, int width, int
   const float centerFeather = 0.2f;
   const float warpMask = smoothstep(centerRadius, centerRadius + centerFeather, map.radius);
   map.centerProtectionMask = 1.0f - warpMask;
+  const bool realAnamorphicUtility = params.inputMode == 1;
   const bool useUtilityGeometry = params.inputMode == 1 || params.inputMode == 2;
   map.transferAmount = useUtilityGeometry ? 1.0f : clamp01(params.anamorphicTransfer) * warpMask;
   map.edgeMask = smoothstep(std::max(0.0f, params.edgeCompressionStart), 1.0f, std::abs(spherical.x));
 
-  const float squeezeShape = 1.0f + safeSqueezeDelta(params) * (0.6f + lensIdentityAxisWarp(params) * 0.7f);
+  const float axisWarp = realAnamorphicUtility ? clamp01(params.axisWarp) : lensIdentityAxisWarp(params);
+  const float squeezeShape = 1.0f + safeSqueezeDelta(params) * (0.6f + axisWarp * 0.7f);
   const float axisY = spherical.y / std::max(0.1f, squeezeShape);
   const float axisRadius2 = spherical.x * spherical.x + axisY * axisY;
   const float axisRadius4 = axisRadius2 * axisRadius2;
-  const float axisWarp = lensIdentityAxisWarp(params);
   const float axisDelta = safeSqueezeDelta(params);
 
   const float scaleX = 1.0f + (params.barrel + axisWarp * axisDelta * 0.18f) * axisRadius2 +

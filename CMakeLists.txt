@@ -100,3 +100,18 @@ add_custom_target(package-ofx
   DEPENDS ${OFX_PLUGIN_NAME}
   COMMENT "Packaging ${OFX_BUNDLE_NAME}"
 )
+
+add_executable(lens-map-sanity
+  tests/lens_map_sanity.cpp
+  src/LensMap.cpp
+)
+
+target_include_directories(lens-map-sanity PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${openfx_SOURCE_DIR}/include"
+)
+
+target_compile_options(lens-map-sanity PRIVATE
+  $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->
+  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
+)
