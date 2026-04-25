@@ -42,6 +42,7 @@ set(OFX_BINARY_DIR "${OFX_CONTENTS_DIR}/${OFX_ARCH_DIR}")
 add_library(${OFX_PLUGIN_NAME} MODULE
   src/Describe.cpp
   src/HostSuites.cpp
+  src/LensMap.cpp
   src/ParameterDefinition.cpp
   src/Parameters.cpp
   src/Render.cpp

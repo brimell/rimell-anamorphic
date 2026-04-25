@@ -47,7 +47,18 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addChoiceParam(paramSet, "squeezeMode", "Squeeze Mode", 0, "Off", "Squeeze", "Desqueeze",
                  nullptr,
                  "Utility geometry for real anamorphic plates or creative warps; ignored by the main spherical look mode.");
+  addDoubleParam(paramSet, "anamorphicTransfer", "Anamorphic Transfer", 1.0, 0.0, 1.0, 0.0, 1.0,
+                 "Blends from spherical source mapping to the synthetic anamorphic view map.");
+  addChoiceParam(paramSet, "lensIdentity", "Lens Identity", 1, "Custom", "Modern 1.33x",
+                 "Classic 2x", "Scope Soft Edge",
+                 "Preset identity used to drive geometry, highlight, flare, and ghost scaling.");
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
+  addDoubleParam(paramSet, "axisWarp", "Axis Warp", 0.0, 0.0, 1.0, 0.0, 1.0,
+                 "Adds user-controlled horizontal/vertical separation on top of the selected lens identity.");
+  addDoubleParam(paramSet, "centerProtection", "Center Protection", 0.65, 0.0, 1.0, 0.0, 1.0,
+                 "Protects the central subject area from strong anamorphic transfer.");
+  addDoubleParam(paramSet, "edgeCompressionStart", "Edge Compression Start", 0.65, 0.0, 1.0, 0.25, 0.95,
+                 "Controls where horizontal edge compression begins.");
   addDoubleParam(paramSet, "horizontalFovBoost", "Virtual Horizontal Expansion", 0.0, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "virtualFocalLength", "Virtual Focal Length", 50.0, 10.0, 200.0, 18.0, 100.0);
   addDoubleParam(paramSet, "breathingScale", "Breathing Scale", 0.12, 0.0, 1.0, 0.0, 0.35);

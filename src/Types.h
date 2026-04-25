@@ -23,12 +23,22 @@ struct Image {
   int rowBytes = 0;
 };
 
+struct Vec2 {
+  float x = 0.0f;
+  float y = 0.0f;
+};
+
 struct RenderParams {
   float mix = 1.0f;
   int renderQuality = 1;
   int inputMode = 0;
   int squeezeMode = 0;
+  float anamorphicTransfer = 1.0f;
+  int lensIdentity = 1;
   float squeezeRatio = 1.33f;
+  float axisWarp = 0.0f;
+  float centerProtection = 0.65f;
+  float edgeCompressionStart = 0.65f;
   float horizontalFovBoost = 0.0f;
   float virtualFocalLength = 50.0f;
   float breathingScale = 0.12f;
