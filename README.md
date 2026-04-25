@@ -1,325 +1,108 @@
 # Rimell Anamorphic
 
-**Anamorphic lens character for DaVinci Resolve.**
-
-Rimell Anamorphic is an OFX video plugin designed to add controlled anamorphic-style optical character to digital footage. It is not just a streak flare effect. The aim is to recreate the broader language of anamorphic glass: horizontal squeeze behaviour, edge fall-off, oval highlight rendering, subtle optical distortion, chromatic separation, veiling glare, and controlled flare response.
-
-The plugin is intended for editors, colourists, and filmmakers who want the feeling of anamorphic optics without needing to shoot every project on real anamorphic lenses.
-
-> Status: early development / experimental.
-
----
-
-## What Rimell Anamorphic does
-
-Rimell Anamorphic simulates several families of anamorphic lens behaviour:
-
-### 1. Geometry and squeeze
-
-Anamorphic lenses compress the horizontal field of view during capture and are later desqueezed into a wider image. Rimell Anamorphic includes tools for working with this behaviour creatively or technically.
-
-Implemented controls:
-
-* Squeeze / desqueeze ratio: 1.25x, 1.33x, 1.5x, 1.8x, 2x
-* Output aspect preview: 2.00:1, 2.39:1, 2.66:1, custom
-* Horizontal field-of-view expansion
-* Barrel distortion
-* Mustache distortion
-* Edge compression
-* Centre-safe correction
-
-This module is the foundation of the plugin. Without geometry controls, an “anamorphic” effect quickly becomes just a flare preset.
-
----
-
-### 2. Edge rendering and field fall-off
-
-A lot of anamorphic character comes from how the image behaves away from the centre of the frame. Rimell Anamorphic aims to emulate this through directional blur, edge softness, and asymmetric optical fall-off.
-
-Implemented controls:
-
-* Edge softness
-* Horizontal smear
-* Tangential smear
-* Radial fall-off
-* Field curvature approximation
-* Centre sharpness protection
-* Edge-only masking
-
-The goal is to make the frame feel optically shaped rather than uniformly sharpened or blurred.
-
----
-
-### 3. Oval highlight bloom
-
-One of the most recognisable anamorphic traits is oval out-of-focus highlights. In real lenses, this is tied to the cylindrical optical design and the squeeze/desqueeze process.
-
-Implemented controls:
-
-* Oval highlight stretch
-* Highlight bloom verticality
-* Highlight isolation threshold
-* Bloom softness
-* Edge highlight compression
-* Edge highlight fall-off
-* Optional depth-map input for better results later
-
-This is one of the hardest parts to emulate properly in post. Without depth information, Rimell Anamorphic currently approximates this as anisotropic highlight bloom, not true focus-dependent bokeh. A later version may support external depth maps or matte inputs for more convincing focus-dependent behaviour.
-
----
-
-### 4. Flares, ghosting, and veiling glare
-
-Rimell Anamorphic includes flare tools, but they are treated as one part of the anamorphic look rather than the whole point of the plugin.
-
-Implemented controls:
-
-* Horizontal streak flares
-* Flare length
-* Flare intensity
-* Flare colour
-* Flare threshold
-* Ghost reflections
-* Veiling glare
-* Highlight bloom
-* Coating style presets
-* Light-source masking
-
-The default look should be restrained. Overdone blue streaks tend to make footage look like a cheap plugin rather than real glass.
-
----
-
-### 5. Chromatic and coating character
-
-Real lenses do not render every wavelength perfectly. Rimell Anamorphic adds optional colour separation and coating behaviour to support a more optical image.
-
-Implemented controls:
-
-* Lateral chromatic aberration
-* Edge-only chromatic separation
-* Warm/cool coating bias
-* Highlight tint
-* Shadow protection
-* Skin-tone protection
-
-These effects should usually be subtle. The plugin is designed to add character, not destroy image quality.
-
----
-
-### 6. Vintage defects
-
-Some anamorphic behaviours are technically flaws, but can be visually useful. Rimell Anamorphic keeps these optional rather than building them into every preset.
-
-Implemented controls:
-
-* Anamorphic mumps / close-focus face widening
-* Focus breathing approximation
-* Uneven illumination
-* Asymmetric vignetting
-* Corner warp
-* Vintage softness
-
-Modern anamorphic lenses often try to remove these issues, so Cylindra will treat them as creative choices, not defaults.
-
----
-
-## What Rimell Anamorphic is not
-
-Rimell Anamorphic is not a physically perfect replacement for real anamorphic lenses.
-
-It cannot fully recreate:
-
-* True depth-dependent bokeh without depth information
-* Real focus breathing driven by lens mechanics
-* Exact lens-specific behaviour without measured lens profiles
-* Complex internal reflections from a real optical path
-* The full interaction between aperture, focus distance, focal length, sensor size, and lens design
-
-The plugin is designed to create useful, controllable anamorphic-style image character in post. It should be judged as a creative optical tool, not as a scientific lens simulator.
-
----
-
-## Intended workflow
-
-A typical node or effect chain might look like this:
-
-1. Primary colour correction
-2. Noise reduction, if needed
-3. Rimell Anamorphic geometry / edge character
-4. Rimell Anamorphic highlight behaviour / flare
-5. Film emulation, halation, or grain
-6. Final contrast and output transform
-
-For best results, apply Rimell Anamorphic before final grain and after basic exposure balancing. Extremely clipped highlights may produce less natural flare and bloom behaviour.
-
----
-
-## Suggested controls
-
-### Core
-
-| Control          | Purpose                                       |
-| ---------------- | --------------------------------------------- |
-| `Amount`         | Global strength of the effect                 |
-| `Squeeze Ratio`  | Simulated anamorphic squeeze/desqueeze amount |
-| `Aspect Preview` | Optional framing guide / crop preview         |
-| `Lens Character` | Clean, modern, vintage, heavy, custom         |
-
-### Geometry
-
-| Control             | Purpose                                        |
-| ------------------- | ---------------------------------------------- |
-| `Barrel`            | Adds or removes barrel distortion              |
-| `Mustache`          | Adds complex wide-angle-style distortion       |
-| `Edge Compression`  | Compresses or stretches the edges of the image |
-| `Centre Protection` | Keeps the centre of the frame more stable      |
-
-### Edge and focus
-
-| Control            | Purpose                                                  |
-| ------------------ | -------------------------------------------------------- |
-| `Edge Softness`    | Softens the outer frame                                  |
-| `Horizontal Smear` | Adds directional anamorphic-style blur                   |
-| `Field Fall-off`   | Controls how quickly the image degrades toward the edges |
-| `Astigmatism`      | Separates horizontal and vertical detail behaviour       |
-
-### Highlight behaviour
-
-| Control           | Purpose                                   |
-| ----------------- | ----------------------------------------- |
-| `Flare Threshold` | Defines which highlights generate flares  |
-| `Flare Length`    | Controls streak size                      |
-| `Flare Intensity` | Controls streak brightness                |
-| `Flare Colour`    | Blue, neutral, amber, custom              |
-| `Veiling Glare`   | Adds soft wash around bright areas        |
-| `Ghosting`        | Adds secondary internal reflection shapes |
-
-### Highlight bloom shaping
-
-| Control          | Purpose                                                |
-| ---------------- | ------------------------------------------------------ |
-| `Oval Stretch`   | Reshapes bright defocused regions                      |
-| `Bloom Softness` | Controls blur around isolated highlights               |
-| `Edge Fall-off`  | Darkens or compresses highlight shaping near the edge  |
-| `Depth Matte`    | Optional future input for better focus-aware behaviour |
-
----
-
-## Presets
-
-Possible preset direction:
-
-* `Modern 2x Clean`
-* `Vintage 2x Soft Edge`
-* `Subtle Scope`
-* `Blue Streak Controlled`
-* `Warm Coating`
-* `Low Distortion CinemaScope`
-* `Heavy Mumps / Vintage Close Focus`
-* `Edge Smear Experimental`
-
-Presets should be starting points, not finished looks. The plugin should encourage subtle adjustment per shot.
-
----
-
-## Development goals
-
-The current release track focuses on:
-
-* Stable OFX integration
-* Geometry and edge rendering
-* Subtle chromatic aberration
-* Basic streak flare generation
-* Sensible defaults
-* Resolve-friendly controls
-* CPU render performance and host compatibility
-
-Later versions can add:
-
-* GPU-accelerated image processing where possible
-* Depth-map input
-* Lens profile presets
-* Per-channel distortion
-* More realistic ghosting
-* Better bokeh isolation
-* Animation-aware focus breathing
-* Batch-safe utility mode for desqueeze/crop workflows
-
----
-
-## Naming
-
-Working name: **Rimell Anamorphic**
-
-The name uses the Rimell identity directly and keeps the product clear: this is an anamorphic lens-character plugin, not a vague cinematic filter pack. It can still support a broader suite of tools:
-
-* `Rimell Anamorphic FX` — creative anamorphic character
-* `Rimell Anamorphic Utility` — desqueeze, crop, and framing tools
-* `Rimell Anamorphic Warp` — geometry-only correction/creative distortion
-* `Rimell Anamorphic Flare` — dedicated flare and ghosting module
-
----
-
-## License
-
-To be decided.
-
----
-
-## Disclaimer
-
-Rimell Anamorphic is an independent plugin concept and is not affiliated with ARRI, ZEISS, Panavision, Blackmagic Design, DaVinci Resolve, or any other lens or software manufacturer.
-
----
-
-## Current implementation
-
-The repository contains a CPU C++ OpenFX image effect plugin split across `src/Describe.cpp`,
-`src/Parameters.cpp`, `src/Render.cpp`, and `src/RimellAnamorphic.cpp`.
-
-Implemented controls include:
-
-* Mix and render quality: Draft, Preview, Final
-* Squeeze / desqueeze mode and ratio
-* Horizontal FOV boost and virtual focal length
-* Anamorphic bloom shape, rotation, and edge falloff
-* Cheap v0.1 horizontal flare intensity, length, colour, threshold, and angle
-* Veil, bloom radius, highlight cream, and black-lift protection
-* Ghost count, spread, tint, and coating style
-* Edge blur, tangential smear, radial falloff, horizontal smear, field curvature, and vertical sharpness
-* Barrel, mustache, vertical compensation, and edge compression
-* Close-focus mumps, face-width compensation, focus distance, and breathing
-* Lateral chromatic aberration and focus-dependent longitudinal red/blue softness
-* Oval vignette, asymmetry, corner bias, edge highlight vignette, and bloom vignette
-* 2.00:1, 2.39:1, and 2.66:1 guides with optional baked letterbox preview
-* Basic OFX optimization/lifecycle actions: identity at zero mix, RoD, RoI, clip preferences,
-  create/destroy instance, sequence render brackets, and unload
-* Missing source frames render as transparent output when the host provides an output image
-
-Current v0.1 limitations:
-
-* Flare and bloom are deliberately cheap per-pixel approximations. A future higher-quality version should use lower-resolution highlight matte prepasses.
-* Render quality tiers scale sample counts, but the implementation is still a direct per-pixel CPU renderer.
-* Thresholds are display-referred control values. Scene-linear, log, HDR, and unclipped float media can need different threshold settings.
-* Aspect guides and letterbox preview are rendered into the image when enabled.
-* RGBA byte, short, and float clips are supported. RGB-only and alpha-only clips are currently rejected.
-* CI builds the plugin on macOS, Linux, and Windows, but there are not yet golden-frame image regression tests.
+Rimell Anamorphic is an OFX filter plugin that applies a combined anamorphic-style optical treatment in a single pass.
+
+Status: active development / experimental.
+
+This README reflects the current implementation in code.
+
+## Current Functionality
+
+The plugin currently implements the following behavior:
+
+1. Geometry and squeeze pipeline
+- Squeeze mode: Off, Squeeze, Desqueeze
+- Squeeze ratio control
+- Horizontal FOV boost influenced by virtual focal length
+- Barrel and mustache distortion
+- Vertical compensation
+- Edge compression
+- Close-focus mumps shaping with face-width compensation
+- Breathing response based on focus distance
+
+2. Chromatic behavior
+- Lateral chromatic aberration with pixel scaling
+- Edge-only CA option
+- Longitudinal CA approximation (focus/edge dependent channel softness)
+
+3. Edge and field character
+- Edge blur
+- Field curvature contribution
+- Tangential smear and horizontal smear
+- Radial falloff shaping
+- Vertical sharpness compensation
+
+4. Lens additives and highlight response
+- Directional streak flare with angle, length, intensity, color, threshold, density, span, and falloff
+- Anamorphic-shaped bloom/veil system with stretch, rotation, edge falloff, threshold scaling, ring/sampling controls, and highlight cream
+- Ghost reflections with count, spread, tint, intensity
+- Coating style response (Warm, Neutral, Cool) with warm/cool scaling
+- Center veil contribution and black-lift protection behavior
+
+5. Vignette and highlight-edge shaping
+- Oval vignette
+- Asymmetry and corner bias
+- Edge highlight vignette (cat-eye style dimming)
+- Bloom vignette dimming
+
+6. Aspect tools and guides
+- Aspect guides on/off
+- Output aspect choices: 2.00:1, 2.39:1, 2.66:1, Custom
+- Safe area guide
+- Letterbox preview with opacity
+- Adjustable guide strengths for aspect and safe lines
+
+7. Blend and performance controls
+- Global Mix control
+- Render Quality modes: Draft, Preview, Final
+- Quality mode scales expensive sampling paths for flare, bloom, blur, ghosts, and chromatic work
+
+## Host / Technical Behavior
+
+- OFX context: Filter
+- Source clip: RGBA
+- Output clip: RGBA
+- Supported bit depths: 8-bit, 16-bit, 32-bit float
+- Frame threading enabled
+- Tiled rendering disabled
+- Temporal clip access disabled
+- Identity optimization: if Mix is 0, the effect reports source identity
+- ROI expansion is implemented to account for flare, bloom, blur, and CA sampling footprint
+
+## What Is Not Implemented Yet
+
+The current version does not include:
+
+- Depth-map or matte input for depth-aware bokeh
+- True physically based lens simulation
+- Lens profile system
+- GPU render path
+- Built-in preset browser
+- Multi-clip workflows beyond source/output filter processing
+
+## Practical Use Notes
+
+- The effect is designed as a stacked optical look, not only a flare generator.
+- Best results usually come from subtle settings and a non-maximum Mix.
+- Highly clipped highlights can reduce nuance in bloom/flare response.
+
+## Project Name
+
+Plugin label: Rimell Anamorphic
 
 ## Build
 
-One-command build and install:
-
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release && sudo cmake --install build
-```
-
-If you want the step-by-step commands, use:
-
-Use CMake to configure and build:
+Configure and build:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
+```
+
+Install:
+
+```sh
+cmake --install build
 ```
 
 The built bundle is written to:
@@ -328,16 +111,12 @@ The built bundle is written to:
 build/RimellAnamorphic.ofx.bundle
 ```
 
-Install for the current macOS user:
+After installation, restart your host application. The effect is labeled Rimell Anamorphic in the Rimell/Lens group.
 
-```sh
-cmake --install build
-```
+## License
 
-By default this installs to:
+To be decided.
 
-```text
-/Library/OFX/Plugins/RimellAnamorphic.ofx.bundle
-```
+## Disclaimer
 
-Restart DaVinci Resolve after installation. The effect appears under `Rimell/Lens` as `Rimell Anamorphic`.
+Rimell Anamorphic is an independent plugin project and is not affiliated with ARRI, ZEISS, Panavision, Blackmagic Design, DaVinci Resolve, or other lens/software manufacturers.
