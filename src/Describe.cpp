@@ -93,6 +93,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                  "Preset identity used to drive geometry, highlight, flare, and ghost scaling.");
   addBooleanParam(paramSet, "depthMapEnabled", "Use Depth Map", 1,
                   "Connect DaVinci Resolve's AI Depth Map output to the Depth input to drive focus-aware bokeh, blur, flares, ghosts, and longitudinal CA.");
+  addBooleanParam(paramSet, "previewDepthMap", "Preview Depth Map", 0,
+                  "Displays the connected depth clip as a grayscale output preview.");
   addBooleanParam(paramSet, "depthMapInvert", "Invert Depth Map", 0);
   addDoubleParam(paramSet, "focusDepth", "Focus Depth", 0.5, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "depthFocusRange", "Depth Focus Range", 0.12, 0.0, 1.0, 0.0, 0.5);
@@ -206,7 +208,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
     setParamParent(paramSet, name, "coreGroup");
   }
 
-  const char *depth[] = {"debugView", "depthMapEnabled", "depthMapInvert", "focusDepth",
+  const char *depth[] = {"debugView", "depthMapEnabled", "previewDepthMap", "depthMapInvert", "focusDepth",
                          "depthFocusRange", "depthInfluence", "depthDefocusPixels",
                          "depthBloomBoost"};
   for (const char *name : depth) {

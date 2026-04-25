@@ -110,6 +110,7 @@ RenderParams clampRenderParams(RenderParams params) {
   params.anamorphicTransfer = clampValue(params.anamorphicTransfer, 0.0f, 1.0f);
   params.lensIdentity = clampValue(params.lensIdentity, 0, 3);
   params.depthMapEnabled = params.depthMapEnabled != 0 ? 1 : 0;
+  params.previewDepthMap = params.previewDepthMap != 0 ? 1 : 0;
   params.depthMapInvert = params.depthMapInvert != 0 ? 1 : 0;
   params.focusDepth = clampValue(params.focusDepth, 0.0f, 1.0f);
   params.depthFocusRange = clampValue(params.depthFocusRange, 0.0f, 1.0f);

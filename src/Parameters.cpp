@@ -77,6 +77,7 @@ RenderParams readParams(OfxImageEffectHandle effect) {
       static_cast<float>(getDoubleParam(paramSet, "anamorphicTransfer", params.anamorphicTransfer));
   params.lensIdentity = getIntParam(paramSet, "lensIdentity", params.lensIdentity);
   params.depthMapEnabled = getIntParam(paramSet, "depthMapEnabled", params.depthMapEnabled);
+    params.previewDepthMap = getIntParam(paramSet, "previewDepthMap", params.previewDepthMap);
   params.depthMapInvert = getIntParam(paramSet, "depthMapInvert", params.depthMapInvert);
   params.focusDepth = static_cast<float>(getDoubleParam(paramSet, "focusDepth", params.focusDepth));
   params.depthFocusRange =

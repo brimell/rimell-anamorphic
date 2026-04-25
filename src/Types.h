@@ -38,6 +38,7 @@ struct RenderParams {
   float anamorphicTransfer = 1.0f;
   int lensIdentity = 1;
   int depthMapEnabled = 1;
+  int previewDepthMap = 0;
   int depthMapInvert = 0;
   float focusDepth = 0.5f;
   float depthFocusRange = 0.12f;

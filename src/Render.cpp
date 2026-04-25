@@ -630,6 +630,13 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
 
       const Pixel original = sampleNearest<T>(source, static_cast<float>(x), static_cast<float>(y));
 
+      if (params.previewDepthMap != 0) {
+        const float d = depth ? sampleDepthAt(depth, static_cast<float>(x), static_cast<float>(y), params) : 0.0f;
+        writePixelTyped(dst, {d, d, d, 1.0f});
+        ++pixelsWritten;
+        continue;
+      }
+
       if (debugEnabled) {
         Pixel debugColor = original;
         if (debugView == DebugView::Depth) {
@@ -949,7 +956,12 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                       params.lensIdentity);
 
             stage = "fetch_depth";
-            const bool depthRequested = params.depthMapEnabled != 0;
+            const bool depthRequested =
+              params.depthMapEnabled != 0 ||
+              params.previewDepthMap != 0 ||
+              params.debugView == static_cast<int>(DebugView::Depth) ||
+              params.debugView == static_cast<int>(DebugView::DepthFocusMask) ||
+              params.debugView == static_cast<int>(DebugView::EdgeMask);
             const bool depthClipAvailable = depthClip != nullptr;
             const bool depthClipIsConnected = clipConnected(depthClip);
             const bool depthImageFetched = depthRequested &&
@@ -1033,8 +1045,12 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 params.edgeCropScale = automaticEdgeCropScale(source, source.bounds.x2 - source.bounds.x1,
                                                              source.bounds.y2 - source.bounds.y1, params);
               }
-              const bool depthDebugView = params.debugView == static_cast<int>(DebugView::Depth);
-              const bool depthUsedForProcessing = hasDepth && depthDebugView;
+              const bool depthUsedForProcessing = hasDepth &&
+                                                  (params.depthMapEnabled != 0 ||
+                                                   params.previewDepthMap != 0 ||
+                                                   params.debugView == static_cast<int>(DebugView::Depth) ||
+                                                   params.debugView == static_cast<int>(DebugView::DepthFocusMask) ||
+                                                   params.debugView == static_cast<int>(DebugView::EdgeMask));
               const bool useMetal = false;
               logPrintf(LogLevel::Info,
                         "render",
