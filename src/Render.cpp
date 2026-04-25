@@ -922,6 +922,19 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
              !stringsMatch(sourceComponents, kOfxImageComponentRGBA))) {
           status = kOfxStatErrUnsupported;
           logMessage(LogLevel::Error, "render", "source/output clip format mismatch");
+        } else if (!hasSource) {
+          logMessage(LogLevel::Warn,
+                     "render",
+                     "source image unavailable, returning transparent output for this render");
+          if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
+            fillEmptyTyped<OfxRGBAColourB>(output, renderWindow);
+          } else if (std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0) {
+            fillEmptyTyped<OfxRGBAColourS>(output, renderWindow);
+          } else if (std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
+            fillEmptyTyped<OfxRGBAColourF>(output, renderWindow);
+          } else {
+            status = kOfxStatErrUnsupported;
+          }
         } else {
           const int sourceBpp = (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0)
                                     ? static_cast<int>(sizeof(OfxRGBAColourB))
