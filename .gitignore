@@ -18,6 +18,9 @@ CTestTestfile.cmake
 # FetchContent/populated dependency work dirs
 _deps/
 
+# Local dependency snapshots
+deps/
+
 # Binary artifacts
 *.o
 *.obj
