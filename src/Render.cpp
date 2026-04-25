@@ -122,6 +122,54 @@ bool parseDepthComponents(const char *components, DepthComponents *outDepthCompo
   return false;
 }
 
+int bytesPerChannel(DepthBitDepth bitDepth) {
+  switch (bitDepth) {
+  case DepthBitDepth::Byte:
+    return 1;
+  case DepthBitDepth::Short:
+    return 2;
+  case DepthBitDepth::Float:
+    return 4;
+  }
+  return 0;
+}
+
+bool validateImageLayout(const Image &image, int bytesPerPixel) {
+  const int width = image.bounds.x2 - image.bounds.x1;
+  const int height = image.bounds.y2 - image.bounds.y1;
+  if (!image.data || image.rowBytes == 0 || width <= 0 || height <= 0 || bytesPerPixel <= 0) {
+    return false;
+  }
+
+  const int absRowBytes = image.rowBytes < 0 ? -image.rowBytes : image.rowBytes;
+  const long long required = static_cast<long long>(width) * static_cast<long long>(bytesPerPixel);
+  return static_cast<long long>(absRowBytes) >= required;
+}
+
+void logImageLayout(LogLevel level, const char *scope, const char *name, const Image &image,
+                    int bytesPerPixel, bool valid) {
+  const int width = image.bounds.x2 - image.bounds.x1;
+  const int height = image.bounds.y2 - image.bounds.y1;
+  const int absRowBytes = image.rowBytes < 0 ? -image.rowBytes : image.rowBytes;
+  const long long required = static_cast<long long>(width) * static_cast<long long>(bytesPerPixel);
+  logPrintf(level,
+            scope,
+            "%s layout valid=%d data=%p bounds=[%d,%d,%d,%d] size=%dx%d rowBytes=%d absRowBytes=%d bpp=%d minRowBytes=%lld",
+            name ? name : "image",
+            valid ? 1 : 0,
+            image.data,
+            image.bounds.x1,
+            image.bounds.y1,
+            image.bounds.x2,
+            image.bounds.y2,
+            width,
+            height,
+            image.rowBytes,
+            absRowBytes,
+            bytesPerPixel,
+            required);
+}
+
 float sampleDepthAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
   if (!depth || !depth->image || !depth->image->data || params.depthMapEnabled == 0) {
     return 0.0f;
@@ -712,79 +760,111 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
           status = kOfxStatErrUnsupported;
           logMessage(LogLevel::Error, "render", "source/output clip format mismatch");
         } else {
-          stage = "read_params";
-          RenderParams params = readParams(instance);
-          logPrintf(LogLevel::Debug,
-                    "render",
-                    "params mix=%.3f quality=%d depthEnabled=%d lensIdentity=%d",
-                    params.mix,
-                    params.renderQuality,
-                    params.depthMapEnabled,
-                    params.lensIdentity);
-
-          stage = "fetch_depth";
-          bool hasDepth =
-              params.depthMapEnabled != 0 && depthClip && fetchImage(depthClip, time, &depthImageHandle, &depth);
-          char *depthBitDepth = nullptr;
-          char *depthComponents = nullptr;
-          if (hasDepth) {
-            if (!getImageString(depthImageHandle, kOfxImageEffectPropPixelDepth, &depthBitDepth) ||
-                !getImageString(depthImageHandle, kOfxImageEffectPropComponents, &depthComponents) ||
-                !parseDepthBitDepth(depthBitDepth, &depthImage.bitDepth) ||
-                !parseDepthComponents(depthComponents, &depthImage.components)) {
-              hasDepth = false;
-              logMessage(LogLevel::Warn, "render", "depth clip present but format unsupported, depth disabled");
-            } else {
-              depthImage.image = &depth;
-            }
-          }
-          {
-            stage = "dispatch_render";
+          const int sourceBpp = (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0)
+                                    ? static_cast<int>(sizeof(OfxRGBAColourB))
+                                    : (std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0)
+                                          ? static_cast<int>(sizeof(OfxRGBAColourS))
+                                          : static_cast<int>(sizeof(OfxRGBAColourF));
+          const bool sourceLayoutValid = hasSource ? validateImageLayout(source, sourceBpp) : true;
+          const bool outputLayoutValid = validateImageLayout(output, sourceBpp);
+          if (!sourceLayoutValid || !outputLayoutValid) {
             if (hasSource) {
-              params.edgeCropScale = automaticEdgeCropScale(source, source.bounds.x2 - source.bounds.x1,
-                                                           source.bounds.y2 - source.bounds.y1, params);
+              logImageLayout(LogLevel::Error, "render", "source", source, sourceBpp, sourceLayoutValid);
             }
-            void *metalCommandQueue = nullptr;
-            const bool useMetal = hasSource && !hasDepth && metalEnabled(inArgs, &metalCommandQueue);
-            logPrintf(LogLevel::Info,
+            logImageLayout(LogLevel::Error, "render", "output", output, sourceBpp, outputLayoutValid);
+            status = kOfxStatFailed;
+            logMessage(LogLevel::Error, "render", "invalid source/output image layout");
+          }
+
+          if (status == kOfxStatOK) {
+            stage = "read_params";
+            RenderParams params = readParams(instance);
+            logPrintf(LogLevel::Debug,
                       "render",
-                      "render path source=%d depth=%d metal=%d outputBitDepth=%s",
-                      hasSource ? 1 : 0,
-                      hasDepth ? 1 : 0,
-                      useMetal ? 1 : 0,
-                      outputBitDepth ? outputBitDepth : "(null)");
-            if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
-              ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalFloat");
-              timer.setResult("in_progress");
-              status = renderMetalFloat(metalCommandQueue, source, output, renderWindow, params);
-              timer.setResult(ofxStatusToString(status));
-            } else if (useMetal) {
-              status = kOfxStatGPURenderFailed;
-              logMessage(LogLevel::Error, "render", "metal is enabled but output is not float RGBA");
-            } else if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
-              if (hasSource) {
-                status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params,
-                                                     hasDepth ? &depthImage : nullptr, "byte");
+                      "params mix=%.3f quality=%d depthEnabled=%d lensIdentity=%d",
+                      params.mix,
+                      params.renderQuality,
+                      params.depthMapEnabled,
+                      params.lensIdentity);
+
+            stage = "fetch_depth";
+            bool hasDepth =
+                params.depthMapEnabled != 0 && depthClip && fetchImage(depthClip, time, &depthImageHandle, &depth);
+            char *depthBitDepth = nullptr;
+            char *depthComponents = nullptr;
+            if (hasDepth) {
+              if (!getImageString(depthImageHandle, kOfxImageEffectPropPixelDepth, &depthBitDepth) ||
+                  !getImageString(depthImageHandle, kOfxImageEffectPropComponents, &depthComponents) ||
+                  !parseDepthBitDepth(depthBitDepth, &depthImage.bitDepth) ||
+                  !parseDepthComponents(depthComponents, &depthImage.components)) {
+                hasDepth = false;
+                logMessage(LogLevel::Warn, "render", "depth clip present but format unsupported, depth disabled");
               } else {
-                fillEmptyTyped<OfxRGBAColourB>(output, renderWindow);
+                const int depthBpp = bytesPerChannel(depthImage.bitDepth) *
+                                     (depthImage.components == DepthComponents::RGBA ? 4 : 1);
+                const bool depthLayoutValid = validateImageLayout(depth, depthBpp);
+                if (!depthLayoutValid) {
+                  logImageLayout(LogLevel::Warn, "render", "depth", depth, depthBpp, false);
+                  logPrintf(LogLevel::Warn,
+                            "render",
+                            "depth clip disabled due to invalid layout bitDepth=%s components=%s",
+                            depthBitDepth ? depthBitDepth : "(null)",
+                            depthComponents ? depthComponents : "(null)");
+                  hasDepth = false;
+                } else {
+                  logImageLayout(LogLevel::Debug, "render", "depth", depth, depthBpp, true);
+                  depthImage.image = &depth;
+                }
               }
-            } else if (std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0) {
+            }
+            {
+              stage = "dispatch_render";
               if (hasSource) {
-                status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params,
-                                                     hasDepth ? &depthImage : nullptr, "short");
-              } else {
-                fillEmptyTyped<OfxRGBAColourS>(output, renderWindow);
+                params.edgeCropScale = automaticEdgeCropScale(source, source.bounds.x2 - source.bounds.x1,
+                                                             source.bounds.y2 - source.bounds.y1, params);
               }
-            } else if (std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
-              if (hasSource) {
-                status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params,
-                                                     hasDepth ? &depthImage : nullptr, "float");
+              void *metalCommandQueue = nullptr;
+              const bool useMetal = hasSource && !hasDepth && metalEnabled(inArgs, &metalCommandQueue);
+              logPrintf(LogLevel::Info,
+                        "render",
+                        "render path source=%d depth=%d metal=%d outputBitDepth=%s",
+                        hasSource ? 1 : 0,
+                        hasDepth ? 1 : 0,
+                        useMetal ? 1 : 0,
+                        outputBitDepth ? outputBitDepth : "(null)");
+              if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
+                ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalFloat");
+                timer.setResult("in_progress");
+                status = renderMetalFloat(metalCommandQueue, source, output, renderWindow, params);
+                timer.setResult(ofxStatusToString(status));
+              } else if (useMetal) {
+                status = kOfxStatGPURenderFailed;
+                logMessage(LogLevel::Error, "render", "metal is enabled but output is not float RGBA");
+              } else if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
+                if (hasSource) {
+                  status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params,
+                                                       hasDepth ? &depthImage : nullptr, "byte");
+                } else {
+                  fillEmptyTyped<OfxRGBAColourB>(output, renderWindow);
+                }
+              } else if (std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0) {
+                if (hasSource) {
+                  status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params,
+                                                       hasDepth ? &depthImage : nullptr, "short");
+                } else {
+                  fillEmptyTyped<OfxRGBAColourS>(output, renderWindow);
+                }
+              } else if (std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
+                if (hasSource) {
+                  status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params,
+                                                       hasDepth ? &depthImage : nullptr, "float");
+                } else {
+                  fillEmptyTyped<OfxRGBAColourF>(output, renderWindow);
+                }
               } else {
-                fillEmptyTyped<OfxRGBAColourF>(output, renderWindow);
+                status = kOfxStatErrUnsupported;
+                logMessage(LogLevel::Error, "render", "unsupported output bit depth");
               }
-            } else {
-              status = kOfxStatErrUnsupported;
-              logMessage(LogLevel::Error, "render", "unsupported output bit depth");
             }
           }
         }
