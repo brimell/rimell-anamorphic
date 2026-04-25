@@ -39,6 +39,15 @@ enum class DepthBitDepth { Byte, Short, Float };
 
 enum class DepthComponents { Alpha, RGBA };
 
+enum class DebugView {
+  Off = 0,
+  Source = 1,
+  Depth = 2,
+  DepthFocusMask = 3,
+  HighlightMatte = 4,
+  EdgeMask = 5,
+};
+
 struct DepthImage {
   const Image *image = nullptr;
   DepthBitDepth bitDepth = DepthBitDepth::Float;
@@ -220,6 +229,25 @@ float depthDefocusMaskAt(const DepthImage *depth, float x, float y, const Render
   const float focusRange = std::max(0.001f, params.depthFocusRange);
   const float feather = std::max(0.05f, focusRange * 0.75f);
   return smoothstep(focusRange, focusRange + feather, separation) * params.depthInfluence;
+}
+
+float highlightMatteAt(const Pixel &sample, const RenderParams &params) {
+  return clamp01(smoothstep(params.flareThreshold, 1.0f, luminance(sample)));
+}
+
+float edgeMaskAt(const Image &source, float x, float y, int width, int height,
+                 const RenderParams &params, const DepthImage *depth) {
+  const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
+  const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
+  const float nx = (x - cx) / std::max(1.0f, width * 0.5f);
+  const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
+  const LensMap map = buildLensMap(x, y, source, width, height, params);
+  const float radius = std::max(map.radius, std::sqrt(nx * nx + ny * ny));
+  const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
+  const float edge = std::max({map.edgeMask,
+                               smoothstep(std::max(0.0f, 1.0f - params.radialFalloff), 1.15f, radius),
+                               depthDefocus * 0.7f});
+  return clamp01(edge);
 }
 
 float qualityScale(const RenderParams &params) {
@@ -545,6 +573,8 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
                       const DepthImage *depth, const char *pixelTag) {
   const int width = source.bounds.x2 - source.bounds.x1;
   const int height = source.bounds.y2 - source.bounds.y1;
+  const DebugView debugView = static_cast<DebugView>(params.debugView);
+  const bool debugEnabled = debugView != DebugView::Off;
   const bool bypass = params.mix <= 0.0001f;
   const auto started = std::chrono::steady_clock::now();
   std::uint64_t pixelsWritten = 0;
@@ -600,6 +630,32 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
       }
 
       const Pixel original = sampleNearest<T>(source, static_cast<float>(x), static_cast<float>(y));
+
+      if (debugEnabled) {
+        Pixel debugColor = original;
+        if (debugView == DebugView::Depth) {
+          const float d = depth ? sampleDepthAt(depth, static_cast<float>(x), static_cast<float>(y), params) : 0.0f;
+          debugColor = {d, d, d, 1.0f};
+        } else if (debugView == DebugView::DepthFocusMask) {
+          const float m = depth ? depthDefocusMaskAt(depth, static_cast<float>(x), static_cast<float>(y), params)
+                                : 0.0f;
+          debugColor = {m, m, m, 1.0f};
+        } else if (debugView == DebugView::HighlightMatte) {
+          const Pixel mapped = mappedSample<T>(source, static_cast<float>(x), static_cast<float>(y),
+                                               width, height, params);
+          const float h = highlightMatteAt(mapped, params);
+          debugColor = {h, h, h, 1.0f};
+        } else if (debugView == DebugView::EdgeMask) {
+          const float e = edgeMaskAt(source, static_cast<float>(x), static_cast<float>(y), width, height,
+                                     params, depth);
+          debugColor = {e, e, e, 1.0f};
+        }
+
+        writePixelTyped(dst, debugColor);
+        ++pixelsWritten;
+        continue;
+      }
+
       if (bypass) {
         writePixelTyped(dst, original);
         continue;
@@ -667,6 +723,8 @@ void fillEmptyTyped(const Image &output, const OfxRectI &renderWindow) {
   }
 }
 
+bool clipConnected(OfxImageClipHandle clip);
+
 bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *imageHandle, Image *image) {
   if (!clip || !imageHandle || !image) {
     return false;
@@ -682,9 +740,32 @@ bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *ima
   if (gPropertySuite->propGetPointer(*imageHandle, kOfxImagePropData, 0, &image->data) != kOfxStatOK ||
       gPropertySuite->propGetInt(*imageHandle, kOfxImagePropRowBytes, 0, &image->rowBytes) != kOfxStatOK ||
       gPropertySuite->propGetIntN(*imageHandle, kOfxImagePropBounds, 4, &image->bounds.x1) != kOfxStatOK) {
+    gEffectSuite->clipReleaseImage(*imageHandle);
+    *imageHandle = nullptr;
+    *image = {};
     return false;
   }
-  return image->data != nullptr;
+
+  if (!image->data) {
+    gEffectSuite->clipReleaseImage(*imageHandle);
+    *imageHandle = nullptr;
+    *image = {};
+    return false;
+  }
+
+  return true;
+}
+
+bool fetchOptionalImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *imageHandle,
+                        Image *image) {
+  *imageHandle = nullptr;
+  *image = {};
+
+  if (!clip || !clipConnected(clip)) {
+    return false;
+  }
+
+  return fetchImage(clip, time, imageHandle, image);
 }
 
 bool getImageString(OfxPropertySetHandle imageHandle, const char *property, char **value) {
@@ -873,9 +954,8 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
             const bool depthRequested = params.depthMapEnabled != 0;
             const bool depthClipAvailable = depthClip != nullptr;
             const bool depthClipIsConnected = clipConnected(depthClip);
-            const bool depthImageFetched =
-              depthRequested && depthClipAvailable && depthClipIsConnected &&
-              fetchImage(depthClip, time, &depthImageHandle, &depth);
+            const bool depthImageFetched = depthRequested &&
+                                           fetchOptionalImage(depthClip, time, &depthImageHandle, &depth);
             bool hasDepth = depthImageFetched;
             logPrintf(LogLevel::Debug,
                   "render",
@@ -952,12 +1032,16 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                                                              source.bounds.y2 - source.bounds.y1, params);
               }
               void *metalCommandQueue = nullptr;
-              const bool useMetal = hasSource && !hasDepth && metalEnabled(inArgs, &metalCommandQueue);
+              // Keep depth-connected renders on CPU to avoid host-specific GPU path instability.
+              const bool forceCpuDepthPath = depthClipIsConnected;
+              const bool useMetal = hasSource && !hasDepth && !forceCpuDepthPath &&
+                                    metalEnabled(inArgs, &metalCommandQueue);
               logPrintf(LogLevel::Info,
                         "render",
-                        "render path source=%d depth=%d metal=%d outputBitDepth=%s",
+                        "render path source=%d depth=%d depthConnected=%d metal=%d outputBitDepth=%s",
                         hasSource ? 1 : 0,
                         hasDepth ? 1 : 0,
+                        depthClipIsConnected ? 1 : 0,
                         useMetal ? 1 : 0,
                         outputBitDepth ? outputBitDepth : "(null)");
               if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
@@ -1132,8 +1216,10 @@ OfxStatus getClipPreferences(OfxImageEffectHandle /*instance*/, OfxPropertySetHa
       clipPropertyName("OfxImageClipPropComponents_", kOfxImageEffectOutputClipName);
   const std::string sourceComponents =
       clipPropertyName("OfxImageClipPropComponents_", kOfxImageEffectSimpleSourceClipName);
+    const std::string depthComponents = clipPropertyName("OfxImageClipPropComponents_", kDepthClipName);
   gPropertySuite->propSetString(outArgs, outputComponents.c_str(), 0, kOfxImageComponentRGBA);
   gPropertySuite->propSetString(outArgs, sourceComponents.c_str(), 0, kOfxImageComponentRGBA);
+    gPropertySuite->propSetString(outArgs, depthComponents.c_str(), 0, kOfxImageComponentRGBA);
   gPropertySuite->propSetString(outArgs, kOfxImageEffectPropPreMultiplication, 0,
                                 kOfxImageUnPreMultiplied);
   gPropertySuite->propSetInt(outArgs, kOfxImageClipPropContinuousSamples, 0, 0);

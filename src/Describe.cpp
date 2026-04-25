@@ -42,8 +42,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
 
   gEffectSuite->clipDefine(effect, kDepthClipName, &props);
-  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentAlpha);
-  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 1, kOfxImageComponentRGBA);
+  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 0, kOfxBitDepthByte);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 1, kOfxBitDepthShort);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 2, kOfxBitDepthFloat);
@@ -76,6 +75,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addGroupParam(paramSet, "framingLetterboxGroup", "Letterbox + Crop", 0);
 
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
+  addChoiceParam(paramSet, "debugView", "Debug View", 0, "Off", "Source", "Depth",
+                 "Depth Focus Mask", "Highlight Matte", "Edge Mask");
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, "Draft", "Preview", "Final",
                  nullptr, nullptr, "Scales expensive flare, bloom, blur, and chromatic sampling.");
   addChoiceParam(paramSet, "lookPreset", "Look Preset", 0, "Manual", "Subtle Modern",
@@ -101,6 +102,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "depthInfluence", "Depth Influence", 0.8, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "depthDefocusPixels", "Depth Defocus Pixels", 18.0, 0.0, 160.0, 0.0, 60.0);
   addDoubleParam(paramSet, "depthBloomBoost", "Depth Bloom Boost", 0.65, 0.0, 3.0, 0.0, 1.5);
+  // Backward compatibility for older saved projects.
+  addDoubleParam(paramSet, "halationExposureThreshold", "", 0.5, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
   addDoubleParam(paramSet, "axisWarp", "Axis Warp", 0.0, 0.0, 1.0, 0.0, 1.0,
                  "Adds user-controlled horizontal/vertical separation on top of the selected lens identity.");
@@ -205,10 +208,22 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
     setParamParent(paramSet, name, "coreGroup");
   }
 
-  const char *depth[] = {"depthMapEnabled", "depthMapInvert", "focusDepth", "depthFocusRange",
-                         "depthInfluence", "depthDefocusPixels", "depthBloomBoost"};
+  const char *depth[] = {"debugView", "depthMapEnabled", "depthMapInvert", "focusDepth",
+                         "depthFocusRange", "depthInfluence", "depthDefocusPixels",
+                         "depthBloomBoost"};
   for (const char *name : depth) {
     setParamParent(paramSet, name, "depthGroup");
+  }
+  setParamParent(paramSet, "halationExposureThreshold", "depthGroup");
+  {
+    OfxParamHandle legacyParam = nullptr;
+    OfxPropertySetHandle legacyProps = nullptr;
+    if (gParameterSuite->paramGetHandle(paramSet, "halationExposureThreshold", &legacyParam,
+                                        &legacyProps) == kOfxStatOK &&
+        legacyProps) {
+      gPropertySuite->propSetInt(legacyProps, kOfxParamPropSecret, 0, 1);
+      gPropertySuite->propSetInt(legacyProps, kOfxParamPropEnabled, 0, 0);
+    }
   }
 
   const char *geometrySubGroups[] = {"geometryModeGroup", "geometryShapeGroup", "geometryFocusGroup"};
