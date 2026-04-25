@@ -97,7 +97,7 @@ struct RenderParams {
   float vignetteAsymmetry = 0.0f;
   float cornerBias = 0.0f;
 
-  float horizontalSmear = 0.1f;
+  float horizontalSmear = 0.03f;
   float verticalSharpness = 0.0f;
   float fieldCurvature = 0.03f;
 
@@ -979,7 +979,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "vignetteAsymmetry", "Asymmetry", 0.0, -1.0, 1.0, -0.5, 0.5);
   addDoubleParam(paramSet, "cornerBias", "Corner Bias", 0.0, -1.0, 1.0, -0.5, 0.5);
 
-  addDoubleParam(paramSet, "horizontalSmear", "Horizontal Smear", 0.1, 0.0, 1.0, 0.0, 0.7);
+  addDoubleParam(paramSet, "horizontalSmear", "Horizontal Smear", 0.03, 0.0, 1.0, 0.0, 0.7);
   addDoubleParam(paramSet, "verticalSharpness", "Vertical Sharpness", 0.0, 0.0, 1.0, 0.0, 0.5);
   addDoubleParam(paramSet, "fieldCurvature", "Field Curvature", 0.03, 0.0, 1.0, 0.0, 0.7);
 

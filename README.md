@@ -50,21 +50,21 @@ The goal is to make the frame feel optically shaped rather than uniformly sharpe
 
 ---
 
-### 3. Oval bokeh and highlight shaping
+### 3. Oval highlight bloom
 
 One of the most recognisable anamorphic traits is oval out-of-focus highlights. In real lenses, this is tied to the cylindrical optical design and the squeeze/desqueeze process.
 
 Planned controls:
 
 * Oval highlight stretch
-* Bokeh verticality
+* Highlight bloom verticality
 * Highlight isolation threshold
-* Bokeh softness
-* Edge bokeh compression
-* Cat-eye edge behaviour
+* Bloom softness
+* Edge highlight compression
+* Edge highlight fall-off
 * Optional depth-map input for better results later
 
-This is one of the hardest parts to emulate properly in post. Without depth information, Rimell Anamorphic can only approximate oval bokeh by detecting and reshaping bright defocused regions. A later version may support external depth maps or matte inputs for more convincing focus-dependent behaviour.
+This is one of the hardest parts to emulate properly in post. Without depth information, Rimell Anamorphic currently approximates this as anisotropic highlight bloom, not true focus-dependent bokeh. A later version may support external depth maps or matte inputs for more convincing focus-dependent behaviour.
 
 ---
 
@@ -194,13 +194,13 @@ For best results, apply Rimell Anamorphic before final grain and after basic exp
 | `Veiling Glare`   | Adds soft wash around bright areas        |
 | `Ghosting`        | Adds secondary internal reflection shapes |
 
-### Bokeh approximation
+### Highlight bloom shaping
 
 | Control          | Purpose                                                |
 | ---------------- | ------------------------------------------------------ |
 | `Oval Stretch`   | Reshapes bright defocused regions                      |
-| `Bokeh Softness` | Controls blur around isolated highlights               |
-| `Cat-eye Edge`   | Shapes edge highlights into clipped ovals              |
+| `Bloom Softness` | Controls blur around isolated highlights               |
+| `Edge Fall-off`  | Darkens or compresses highlight shaping near the edge  |
 | `Depth Matte`    | Optional future input for better focus-aware behaviour |
 
 ---
@@ -279,16 +279,22 @@ Implemented controls include:
 
 * Squeeze / desqueeze mode and ratio
 * Horizontal FOV boost and virtual focal length
-* Oval bokeh stretch, rotation, and edge falloff
-* Horizontal flare intensity, length, colour, threshold, and angle
+* Anamorphic bloom shape, rotation, and edge falloff
+* Cheap v0.1 horizontal flare intensity, length, colour, threshold, and angle
 * Veil, bloom radius, highlight cream, and black-lift protection
 * Ghost count, spread, tint, and coating style
 * Edge blur, tangential smear, radial falloff, horizontal smear, field curvature, and vertical sharpness
 * Barrel, mustache, vertical compensation, and edge compression
 * Close-focus mumps, face-width compensation, focus distance, and breathing
-* Lateral and longitudinal chromatic aberration
-* Oval vignette, asymmetry, corner bias, cat-eye strength, and bokeh vignette
-* 2.00:1, 2.39:1, and 2.66:1 guides with optional letterbox preview
+* Lateral chromatic aberration; longitudinal CA is reserved for a future warped-coordinate implementation
+* Oval vignette, asymmetry, corner bias, edge highlight vignette, and bloom vignette
+* 2.00:1, 2.39:1, and 2.66:1 guides with optional baked letterbox preview
+
+Current v0.1 limitations:
+
+* Flare and bloom are deliberately cheap per-pixel approximations. A future higher-quality version should use lower-resolution highlight matte prepasses.
+* Thresholds are display-referred control values. Scene-linear, log, HDR, and unclipped float media can need different threshold settings.
+* Aspect guides and letterbox preview are rendered into the image when enabled.
 
 ## Build
 
