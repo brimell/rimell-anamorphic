@@ -579,6 +579,10 @@ Rimell Anamorphic is built around a stronger version of the second approach: the
 
 The current implementation can also take an optional `Depth` clip. In DaVinci Resolve, generate the depth plate with Resolve's AI Depth Map tool and connect that output to the Rimell Anamorphic `Depth` input on the OFX node.
 
+### Depth input status
+
+The optional `Depth` input is currently in debug validation. The plugin can connect and display compatible RGBA depth plates, but full depth-driven optical behaviour is being enabled incrementally. During this phase, depth processing may be CPU-only and may be disabled automatically if the depth clip does not match the output bit depth and RGBA component layout.
+
 The plugin still infers lens calibration from controls rather than measured lens profiles, OpenLensIO payloads, or STMaps.
 
 ---
@@ -631,7 +635,7 @@ These presets are exposed as starting points through the normal OFX parameter se
   * `Invert Depth Map`, for hosts or node graphs where near/far values are reversed
   * `Focus Depth`, which selects the in-focus depth value
   * `Depth Focus Range`, which controls how much of the map remains protected around the focus value
-  * `Depth Influence`, `Depth Defocus Pixels`, and `Depth Bloom Boost`, which scale the depth contribution to blur, bokeh, flare, ghosting, and longitudinal CA
+  * `Depth Influence`, `Depth Defocus Pixels`, and `Depth Bloom Boost`, which are being staged in gradually as depth-driven modules are validated
 
 ### 2. Virtual anamorphic geometry and axis-specific warping
 

@@ -41,10 +41,10 @@ enum class DepthComponents { Alpha, RGBA };
 enum class DebugView {
   Off = 0,
   Source = 1,
-  Depth = 2,
-  DepthFocusMask = 3,
-  HighlightMatte = 4,
-  EdgeMask = 5,
+  DepthRaw = 2,
+  DepthNormalised = 3,
+  DepthFocusMask = 4,
+  DepthDefocusRadius = 5,
 };
 
 struct DepthImage {
@@ -180,7 +180,7 @@ void logImageLayout(LogLevel level, const char *scope, const char *name, const I
 }
 
 float sampleDepthAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
-  if (!depth || !depth->image || !depth->image->data || params.depthMapEnabled == 0) {
+  if (!depth || !depth->image || !depth->image->data) {
     return 0.0f;
   }
 
@@ -209,12 +209,57 @@ float sampleDepthAt(const DepthImage *depth, float x, float y, const RenderParam
     value = luminance(sample);
   }
 
-  if (!std::isfinite(value)) {
+  return value;
+}
+
+float safeDepth01(float v, float fallback = 0.5f) {
+  if (!std::isfinite(v)) {
+    return fallback;
+  }
+  return clamp01(v);
+}
+
+float safeRadius(float px, float maxPx = 64.0f) {
+  if (!std::isfinite(px)) {
+    return 0.0f;
+  }
+  return std::max(0.0f, std::min(px, maxPx));
+}
+
+float sampleDepthNormalisedAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
+  const float raw = sampleDepthAt(depth, x, y, params);
+  float depth01 = safeDepth01(raw);
+  if (params.depthMapInvert != 0) {
+    depth01 = 1.0f - depth01;
+  }
+  return depth01;
+}
+
+float depthFocusMaskFromDepth(float depthValue, const RenderParams &params) {
+  const float depth01 = safeDepth01(depthValue);
+  const float focusDistance = std::abs(depth01 - params.focusDepth);
+  const float focusRange = clamp01(params.depthFocusRange);
+  const float focusMask = smoothstep(focusRange, 1.0f, focusDistance);
+  return clamp01(focusMask);
+}
+
+float depthFocusMaskAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
+  if (!depth || !depth->image || !depth->image->data) {
     return 0.0f;
   }
 
-  value = clamp01(value);
-  return params.depthMapInvert != 0 ? 1.0f - value : value;
+  const float depthValue = sampleDepthNormalisedAt(depth, x, y, params);
+  return depthFocusMaskFromDepth(depthValue, params);
+}
+
+float depthDefocusRadiusAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
+  if (!depth || !depth->image || !depth->image->data || params.depthMapEnabled == 0 ||
+      params.depthInfluence <= 0.0001f) {
+    return 0.0f;
+  }
+
+  const float focusMask = depthFocusMaskAt(depth, x, y, params);
+  return safeRadius(params.depthDefocusPixels * params.depthInfluence * focusMask, 64.0f);
 }
 
 float depthDefocusMaskAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
@@ -223,11 +268,8 @@ float depthDefocusMaskAt(const DepthImage *depth, float x, float y, const Render
     return 0.0f;
   }
 
-  const float depthValue = sampleDepthAt(depth, x, y, params);
-  const float separation = std::abs(depthValue - params.focusDepth);
-  const float focusRange = std::max(0.001f, params.depthFocusRange);
-  const float feather = std::max(0.05f, focusRange * 0.75f);
-  return smoothstep(focusRange, focusRange + feather, separation) * params.depthInfluence;
+  const float focusMask = depthFocusMaskAt(depth, x, y, params);
+  return clamp01(focusMask * params.depthInfluence);
 }
 
 float highlightMatteAt(const Pixel &sample, const RenderParams &params) {
@@ -310,11 +352,10 @@ Pixel opticalBaseSample(const Image &source, float x, float y, int width, int he
     const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
     const float edge = smoothstep(0.15f, 1.05f, std::sqrt(nx * nx + ny * ny));
     const float focusBias = 0.35f + std::abs(params.focusDistance - 0.5f) * 1.3f;
-    const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
-    const float radiusPixels = params.longitudinalCA * focusBias * std::max(edge, depthDefocus) * 4.0f;
+    const float radiusPixels = params.longitudinalCA * focusBias * edge * 4.0f;
     const Pixel redDefocus = channelDefocusSample<T>(source, x, y, width, height, params, radiusPixels);
     const Pixel blueDefocus = channelDefocusSample<T>(source, x, y, width, height, params, radiusPixels * 0.65f);
-    const float amount = clamp01(params.longitudinalCA * (0.35f + std::max(edge, depthDefocus) * 0.65f));
+    const float amount = clamp01(params.longitudinalCA * (0.35f + edge * 0.65f));
     base.r = lerp(base.r, redDefocus.r, amount);
     base.b = lerp(base.b, blueDefocus.b, amount);
   }
@@ -331,16 +372,15 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
   const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
   const LensMap map = buildLensMap(x, y, source, width, height, params);
   const float radius = std::max(map.radius, std::sqrt(nx * nx + ny * ny));
-  const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
   const float edge = std::max({map.edgeMask,
-                               smoothstep(std::max(0.0f, 1.0f - params.radialFalloff), 1.15f, radius),
-                               depthDefocus * 0.7f});
+                   smoothstep(std::max(0.0f, 1.0f - params.radialFalloff), 1.15f, radius)});
 
   Pixel result = base;
 
+    const float depthBlurRadius = depthDefocusRadiusAt(depth, x, y, params);
   const float blurRadius =
       params.edgeBlur * edge * params.edgeBlurPixels + params.fieldCurvature * edge * params.fieldCurvaturePixels +
-      depthDefocus * params.depthDefocusPixels * 0.35f;
+      depthBlurRadius * 0.35f;
   if (blurRadius > 0.05f) {
     Pixel blur{};
     float weight = 0.0f;
@@ -479,8 +519,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float sx = x + dirX * t * flareSpan;
       const float sy = y + dirY * t * flareSpan;
       const float h = highlightAt<T>(source, sx, sy, width, height, params, params.flareThreshold);
-      const float depthBoost = 1.0f + depthDefocusMaskAt(depth, sx, sy, params) * params.depthBloomBoost;
-      const float w = std::exp(-std::abs(t) * params.flareFalloff) * h * params.flareIntensity * depthBoost;
+      const float w = std::exp(-std::abs(t) * params.flareFalloff) * h * params.flareIntensity;
       add.r += params.flareColour.r * w;
       add.g += params.flareColour.g * w;
       add.b += params.flareColour.b * w;
@@ -489,7 +528,6 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
 
   const float bloomPixels = params.bloomRadius * params.bloomPixelScale;
   if ((params.veil > 0.001f || params.highlightCream > 0.001f) && bloomPixels > 0.5f) {
-    const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
     const float rotation = params.bokehRotation * kPi / 180.0f;
     const float cosR = std::cos(rotation);
     const float sinR = std::sin(rotation);
@@ -501,8 +539,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
     float total = 0.0f;
     Pixel bloom{};
     for (int ring = 1; ring <= rings; ++ring) {
-      const float ringRadius = bloomPixels * (1.0f + depthDefocus * params.depthBloomBoost) *
-                               static_cast<float>(ring) / static_cast<float>(rings);
+      const float ringRadius = bloomPixels * static_cast<float>(ring) / static_cast<float>(rings);
       for (int i = 0; i < samplesPerRing; ++i) {
         const float a = 2.0f * kPi * static_cast<float>(i) / static_cast<float>(samplesPerRing);
         float ox = std::cos(a) * ringRadius / stretch;
@@ -528,7 +565,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float protect = lerp(1.0f, clamp01(luminance(base) * 2.0f), params.blackLiftProtection);
       const float amount =
           (params.veil * params.bloomVeilScale + params.highlightCream * params.bloomCreamScale) * protect *
-          bokehEdgeKeep * (1.0f + depthDefocus * params.depthBloomBoost);
+          bokehEdgeKeep;
       add.r += bloom.r * amount;
       add.g += bloom.g * amount;
       add.b += bloom.b * amount;
@@ -549,9 +586,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float sy = cy - (y - cy) * scale * lensIdentityGhostScaleY(params);
       const Pixel ghost = mappedSample<T>(source, sx, sy, width, height, params);
       const float h = smoothstep(params.flareThreshold, 1.0f, luminance(ghost));
-        const float depthBoost =
-          1.0f + depthDefocusMaskAt(depth, sx, sy, params) * params.depthBloomBoost * 0.5f;
-      const float w = h * (params.ghostIntensity / static_cast<float>(i)) * tintShift * depthBoost;
+      const float w = h * (params.ghostIntensity / static_cast<float>(i)) * tintShift;
       add.r += ghost.r * params.ghostTint.r * w;
       add.g += ghost.g * params.ghostTint.g * w;
       add.b += ghost.b * params.ghostTint.b * w;
@@ -631,7 +666,8 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
       const Pixel original = sampleNearest<T>(source, static_cast<float>(x), static_cast<float>(y));
 
       if (params.previewDepthMap != 0) {
-        const float d = depth ? sampleDepthAt(depth, static_cast<float>(x), static_cast<float>(y), params) : 0.0f;
+        const float d = depth ? sampleDepthNormalisedAt(depth, static_cast<float>(x), static_cast<float>(y), params)
+                              : 0.0f;
         writePixelTyped(dst, {d, d, d, 1.0f});
         ++pixelsWritten;
         continue;
@@ -639,22 +675,22 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
 
       if (debugEnabled) {
         Pixel debugColor = original;
-        if (debugView == DebugView::Depth) {
+        if (debugView == DebugView::DepthRaw) {
           const float d = depth ? sampleDepthAt(depth, static_cast<float>(x), static_cast<float>(y), params) : 0.0f;
+          debugColor = {safeDepth01(d, 0.0f), safeDepth01(d, 0.0f), safeDepth01(d, 0.0f), 1.0f};
+        } else if (debugView == DebugView::DepthNormalised) {
+          const float d = depth ? sampleDepthNormalisedAt(depth, static_cast<float>(x), static_cast<float>(y), params)
+                                : 0.0f;
           debugColor = {d, d, d, 1.0f};
         } else if (debugView == DebugView::DepthFocusMask) {
-          const float m = depth ? depthDefocusMaskAt(depth, static_cast<float>(x), static_cast<float>(y), params)
+          const float m = depth ? depthFocusMaskAt(depth, static_cast<float>(x), static_cast<float>(y), params)
                                 : 0.0f;
           debugColor = {m, m, m, 1.0f};
-        } else if (debugView == DebugView::HighlightMatte) {
-          const Pixel mapped = mappedSample<T>(source, static_cast<float>(x), static_cast<float>(y),
-                                               width, height, params);
-          const float h = highlightMatteAt(mapped, params);
-          debugColor = {h, h, h, 1.0f};
-        } else if (debugView == DebugView::EdgeMask) {
-          const float e = edgeMaskAt(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                     params, depth);
-          debugColor = {e, e, e, 1.0f};
+        } else if (debugView == DebugView::DepthDefocusRadius) {
+          const float r = depth ? depthDefocusRadiusAt(depth, static_cast<float>(x), static_cast<float>(y), params)
+                                : 0.0f;
+          const float rn = clamp01(r / 64.0f);
+          debugColor = {rn, rn, rn, 1.0f};
         }
 
         writePixelTyped(dst, debugColor);
@@ -668,13 +704,13 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
       }
 
       Pixel color = opticalBaseSample<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                         params, depth);
+                                         params, nullptr);
       color = edgeCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, color,
                                params, depth);
       color = depthDefocusCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                       color, params, depth);
+                                       color, params, nullptr);
       const Pixel add = lensAdditives<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                         params, color, depth);
+                                         params, color, nullptr);
       color.r += add.r;
       color.g += add.g;
       color.b += add.b;
@@ -959,9 +995,10 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
             const bool depthRequested =
               params.depthMapEnabled != 0 ||
               params.previewDepthMap != 0 ||
-              params.debugView == static_cast<int>(DebugView::Depth) ||
+              params.debugView == static_cast<int>(DebugView::DepthRaw) ||
+              params.debugView == static_cast<int>(DebugView::DepthNormalised) ||
               params.debugView == static_cast<int>(DebugView::DepthFocusMask) ||
-              params.debugView == static_cast<int>(DebugView::EdgeMask);
+              params.debugView == static_cast<int>(DebugView::DepthDefocusRadius);
             const bool depthClipAvailable = depthClip != nullptr;
             const bool depthClipIsConnected = clipConnected(depthClip);
             const bool depthImageFetched = depthRequested &&
@@ -1048,9 +1085,10 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
               const bool depthUsedForProcessing = hasDepth &&
                                                   (params.depthMapEnabled != 0 ||
                                                    params.previewDepthMap != 0 ||
-                                                   params.debugView == static_cast<int>(DebugView::Depth) ||
+                                                   params.debugView == static_cast<int>(DebugView::DepthRaw) ||
+                                                   params.debugView == static_cast<int>(DebugView::DepthNormalised) ||
                                                    params.debugView == static_cast<int>(DebugView::DepthFocusMask) ||
-                                                   params.debugView == static_cast<int>(DebugView::EdgeMask));
+                                                   params.debugView == static_cast<int>(DebugView::DepthDefocusRadius));
               const bool useMetal = false;
               logPrintf(LogLevel::Info,
                         "render",

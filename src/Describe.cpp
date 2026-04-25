@@ -72,8 +72,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addGroupParam(paramSet, "framingLetterboxGroup", "Letterbox + Crop", 0);
 
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
-  addChoiceParam(paramSet, "debugView", "Debug View", 0, "Off", "Source", "Depth",
-                 "Depth Focus Mask", "Highlight Matte", "Edge Mask");
+  addChoiceParam(paramSet, "debugView", "Debug View", 0, "Off", "Source", "Depth Raw",
+                 "Depth Normalised", "Depth Focus Mask", "Depth Defocus Radius");
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, "Draft", "Preview", "Final",
                  nullptr, nullptr, "Scales expensive flare, bloom, blur, and chromatic sampling.");
   addChoiceParam(paramSet, "lookPreset", "Look Preset", 0, "Manual", "Subtle Modern",
