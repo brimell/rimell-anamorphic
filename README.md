@@ -1,8 +1,8 @@
 # Rimell Anamorphic
 
-Rimell Anamorphic is an OFX filter plugin for making spherical digital footage feel like finished, desqueezed anamorphic footage.
+Rimell Anamorphic is an OFX filter plugin for making spherical digital footage feel like finished, desqueezed anamorphic footage through a procedural mapping approach called **AxiScope Mapping** / **Virtual Anamorphic Transfer**.
 
-In its main mode, the plugin assumes normal spherical source footage and applies a combined anamorphic-style optical treatment as one OFX effect.
+In its main mode, the plugin assumes normal spherical source footage, builds a synthetic anamorphic view map, samples the original image through that map, then drives optical artefacts from the same mapped coordinate field.
 
 A separate utility path is available for real anamorphic source footage that genuinely needs desqueeze and framing handling.
 
@@ -18,7 +18,7 @@ Rimell Anamorphic is designed around a practical problem: most digital footage i
 
 A basic crop to 2.39:1 can make footage wider, but it does not make the footage behave as though it passed through anamorphic glass. Real anamorphic lenses do more than change aspect ratio. They map the scene differently in the horizontal and vertical directions, introduce axis-dependent distortion, change how focus fall-off behaves, reshape highlights, and often create distinctive flares, bokeh, edge softness, chromatic behaviour, vignetting, and breathing.
 
-Rimell Anamorphic is therefore not just a letterbox tool and not just a flare generator. It is a stacked optical-look effect intended to approximate several visual consequences of anamorphic image formation in a controllable post-production plugin.
+Rimell Anamorphic is therefore not just a letterbox tool and not just a flare generator. It is a shared virtual lens-mapping effect intended to approximate several visual consequences of anamorphic image formation in a controllable post-production plugin.
 
 The main creative path is:
 
@@ -31,6 +31,25 @@ The separate utility path is:
 ```text
 real anamorphic source footage -> desqueeze / framing / guide handling
 ```
+
+---
+
+## AxiScope Mapping / Virtual Anamorphic Transfer
+
+The current implementation is built around one shared procedural lens map instead of a set of unrelated look sliders.
+
+For each output pixel, Rimell Anamorphic:
+
+* converts the pixel into normalized source coordinates
+* builds a procedural virtual lens coordinate field
+* blends from spherical coordinates into an axis-dependent anamorphic coordinate using `Anamorphic Transfer`
+* applies center protection, edge compression, axis-weighted barrel/mustache distortion, mumps, breathing, and virtual horizontal expansion
+* samples the source image through the final map
+* derives chromatic separation, edge softness, bloom shape, flare length, ghost bias, and vignette behaviour from the same lens identity
+
+The output of the main spherical mode is already desqueezed-looking. The plugin does not literally desqueeze normal spherical footage unless the utility squeeze/desqueeze path is selected for real anamorphic material.
+
+The v1 map is procedural and real-time. It is STMap-like internally, but there is not yet an import/export workflow for measured maps.
 
 ---
 
@@ -433,7 +452,7 @@ Better approach:
 wide framing + axis-specific geometry + edge falloff + oval highlight shaping + subtle CA + flare/veil/ghosting + controlled vignette
 ```
 
-Rimell Anamorphic is built around the second approach.
+Rimell Anamorphic is built around a stronger version of the second approach: the geometry, edge behaviour, chromatic aberration, bloom, flare, ghosts, and vignette all reference a shared virtual lens map where practical.
 
 It uses an OFX filter architecture so the effect can be applied directly to footage in a host application. The current implementation works as source-to-output image processing rather than as a multi-input compositing system. That means the plugin has to infer highlight behaviour from the plate itself and cannot yet use depth maps, lens calibration profiles, or separate matte inputs.
 
@@ -454,6 +473,11 @@ The plugin currently implements the following behaviour:
   * `Creative Warp`
 * Geometry controls include:
 
+  * lens identity choices: `Custom`, `Modern 1.33x`, `Classic 2x`, `Scope Soft Edge`
+  * `Anamorphic Transfer`, which blends from spherical mapping to synthetic anamorphic mapping
+  * `Axis Warp`, which adds user-controlled horizontal/vertical separation on top of the selected identity
+  * `Center Protection`, which protects the middle of the frame from strong remapping
+  * `Edge Compression Start`, which controls where horizontal edge compression begins
   * squeeze mode options: `Off`, `Squeeze`, `Desqueeze` for the real anamorphic utility and creative warp paths
   * squeeze ratio control
   * virtual horizontal expansion behaviour, formerly horizontal FOV boost, influenced by virtual focal length
@@ -529,12 +553,13 @@ The plugin currently implements the following behaviour:
 ## Conceptual Model and Limits
 
 * Main path intent: spherical input -> virtual anamorphic presentation.
-* Main path geometry does not desqueeze normal circular-lens footage; it emulates anamorphic character on top of the original plate.
+* Main path geometry does not desqueeze normal circular-lens footage; it builds a synthetic anamorphic transfer map and samples the original plate through that map.
 * Real anamorphic desqueeze remains available as a utility path for genuinely squeezed source footage.
 * The plugin can simulate anamorphic traits, but it cannot reconstruct horizontal scene information that was never captured in-frame.
 * Oval highlight behaviour in this workflow is an approximation of anamorphic highlight response, not a physically complete depth-aware bokeh reconstruction.
 * Flare, ghosting, glare, CA, vignette, and blur are image-processing approximations rather than calibrated ray-traced simulations of a measured optical assembly.
 * The plugin does not currently know the real lens, aperture, focus distance, subject distance, sensor size, or scene depth unless those behaviours are manually approximated through controls.
+* The plugin does not currently import measured lens profiles, export STMaps, or blend external view/footage maps.
 
 ---
 
@@ -543,12 +568,12 @@ The plugin currently implements the following behaviour:
 | Lens concept                  | Real optical behaviour                                  | Rimell Anamorphic approximation                                                                            |
 | ----------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Anamorphic squeeze            | Horizontal compression during capture, desqueeze later  | Real utility mode supports squeeze/desqueeze; creative mode avoids stretching spherical footage by default |
-| Axis-dependent mapping        | Different power in horizontal and vertical planes       | Edge compression, vertical compensation, virtual horizontal expansion, creative warp                       |
+| Axis-dependent mapping        | Different power in horizontal and vertical planes       | Shared procedural lens map, Anamorphic Transfer, Axis Warp, edge compression, vertical compensation       |
 | Cylindrical optical character | One-axis optical power and axis-dependent aberration    | Horizontal/tangential smear, vertical sharpness compensation, oval highlight shaping                       |
 | Elliptical bokeh              | Defocused points become vertically oval after desqueeze | Highlight isolation, oval bloom stretch, rotation, edge falloff, cat-eye dimming                           |
-| Linear flare                  | Bright sources produce horizontal streaks               | Directional streak flare system with angle, span, threshold, density, colour, and falloff                  |
+| Linear flare                  | Bright sources produce horizontal streaks               | Directional streak flare system with angle, span, threshold, density, colour, falloff, and identity scale |
 | Veiling glare                 | Optical wash and contrast loss around strong light      | Bloom/veil, centre veil, highlight cream, black-lift protection                                            |
-| Ghosting                      | Internal element reflections                            | Count/spread/tint/intensity ghost model                                                                    |
+| Ghosting                      | Internal element reflections                            | Count/spread/tint/intensity ghost model with anamorphic axis bias                                          |
 | Distortion                    | Barrel, pincushion, mustache, axis-dependent warp       | Barrel/mustache distortion, centre protection, edge compression                                            |
 | Chromatic aberration          | Wavelength-dependent misregistration                    | Lateral CA, edge-only CA, longitudinal CA approximation                                                    |
 | Mumps                         | Close-focus anamorphic widening / astigmatic behaviour  | Close-focus centre squeeze variation and width compensation                                                |
@@ -580,7 +605,7 @@ The current version does not include:
 
 * Depth-map or matte input for depth-aware bokeh
 * True physically based lens simulation
-* Lens profile system
+* Measured lens profile system
 * Lens calibration workflow
 * STMap import/export workflow
 * GPU render path
@@ -620,7 +645,7 @@ That would keep the current plugin usable as a creative look tool while making r
 
 ## Practical Use Notes
 
-* The effect is designed as a stacked optical look, not only a flare generator.
+* The effect is designed as a shared virtual lens-map look, not only a flare generator.
 * Best results usually come from subtle settings and a non-maximum Mix.
 * Highly clipped highlights can reduce nuance in bloom/flare response.
 * Heavy flare without geometry or edge treatment can look fake.
