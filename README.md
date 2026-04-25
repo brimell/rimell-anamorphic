@@ -298,6 +298,14 @@ Current v0.1 limitations:
 
 ## Build
 
+One-command build and install:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release && sudo cmake --install build
+```
+
+If you want the step-by-step commands, use:
+
 Use CMake to configure and build:
 
 ```sh
