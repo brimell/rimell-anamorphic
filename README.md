@@ -18,11 +18,11 @@ The plugin currently implements the following behavior:
 
 1. Input and geometry mode architecture
 - Input mode options:
-	- Spherical -> Anamorphic Look (default intent)
+	- Spherical -> Anamorphic Look (default)
 	- Real Anamorphic Utility
 	- Creative Warp
 - Geometry controls include:
-	- Squeeze mode options currently used by geometry processing (Off, Squeeze, Desqueeze)
+	- Squeeze mode options (Off, Squeeze, Desqueeze) for the real anamorphic utility and creative warp paths
 	- Squeeze ratio control
 	- Virtual horizontal expansion behavior (formerly horizontal FOV boost), influenced by virtual focal length
 
@@ -78,6 +78,7 @@ The plugin currently implements the following behavior:
 ## Conceptual Model and Limits
 
 - Main path intent: spherical input -> virtual anamorphic presentation.
+- Main path geometry does not desqueeze normal circular-lens footage; it emulates anamorphic character on top of the original plate.
 - Real anamorphic desqueeze remains available as a utility path for genuinely squeezed source footage.
 - The plugin can simulate anamorphic traits, but it cannot reconstruct horizontal scene information that was never captured in-frame.
 - Oval highlight behavior in this workflow is an approximation of anamorphic highlight response, not a physically complete depth-aware bokeh reconstruction.

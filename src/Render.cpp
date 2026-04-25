@@ -36,11 +36,14 @@ Pixel warpedSourceSample(const Image &source, float dstX, float dstY, int width,
   nx *= distortion;
   ny *= distortion * (1.0f - params.verticalCompensation * radius2 * params.verticalCompensationScale);
 
-  const float ratio = std::max(0.1f, params.squeezeRatio);
-  if (params.squeezeMode == 1) {
-    nx *= ratio;
-  } else if (params.squeezeMode == 2) {
-    nx /= ratio;
+  const bool useUtilityGeometry = params.inputMode == 1 || params.inputMode == 2;
+  if (useUtilityGeometry) {
+    const float ratio = std::max(0.1f, params.squeezeRatio);
+    if (params.squeezeMode == 1) {
+      nx *= ratio;
+    } else if (params.squeezeMode == 2) {
+      nx /= ratio;
+    }
   }
 
   const float fovScale = 1.0f + params.horizontalFovBoost * (70.0f / std::max(10.0f, params.virtualFocalLength));

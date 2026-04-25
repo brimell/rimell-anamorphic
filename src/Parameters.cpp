@@ -48,7 +48,8 @@ RenderParams readParams(OfxImageEffectHandle effect) {
   RenderParams params;
   params.mix = static_cast<float>(getDoubleParam(paramSet, "mix", params.mix));
   params.renderQuality = std::max(0, std::min(2, getIntParam(paramSet, "renderQuality", params.renderQuality)));
-  params.squeezeMode = getIntParam(paramSet, "squeezeMode", params.squeezeMode);
+  params.inputMode = std::max(0, std::min(2, getIntParam(paramSet, "inputMode", params.inputMode)));
+  params.squeezeMode = std::max(0, std::min(2, getIntParam(paramSet, "squeezeMode", params.squeezeMode)));
   params.squeezeRatio = static_cast<float>(getDoubleParam(paramSet, "squeezeRatio", params.squeezeRatio));
   params.horizontalFovBoost =
       static_cast<float>(getDoubleParam(paramSet, "horizontalFovBoost", params.horizontalFovBoost));

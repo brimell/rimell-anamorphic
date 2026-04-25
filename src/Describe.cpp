@@ -41,10 +41,14 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, "Draft", "Preview", "Final",
                  nullptr, "Scales expensive flare, bloom, blur, and chromatic sampling.");
 
-  addChoiceParam(paramSet, "squeezeMode", "Squeeze Mode", 2, "Off", "Squeeze", "Desqueeze",
-                 nullptr, "Squeeze simulates capture compression; desqueeze stretches horizontally.");
+  addChoiceParam(paramSet, "inputMode", "Input Mode", 0, "Spherical -> Anamorphic Look",
+                 "Real Anamorphic Utility", "Creative Warp", nullptr,
+                 "Spherical mode emulates an anamorphic finish from normal circular-lens footage.");
+  addChoiceParam(paramSet, "squeezeMode", "Squeeze Mode", 0, "Off", "Squeeze", "Desqueeze",
+                 nullptr,
+                 "Utility geometry for real anamorphic plates or creative warps; ignored by the main spherical look mode.");
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
-  addDoubleParam(paramSet, "horizontalFovBoost", "Horizontal FOV Boost", 0.0, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "horizontalFovBoost", "Virtual Horizontal Expansion", 0.0, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "virtualFocalLength", "Virtual Focal Length", 50.0, 10.0, 200.0, 18.0, 100.0);
   addDoubleParam(paramSet, "breathingScale", "Breathing Scale", 0.12, 0.0, 1.0, 0.0, 0.35);
 
