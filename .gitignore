@@ -1,4 +1,38 @@
+# macOS filesystem artifacts
+.DS_Store
+
+# CMake (in-source and out-of-source) build artifacts
 build/
-deps/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+install_manifest.txt
+
+# CTest/CMake temporary files
+Testing/
+CTestTestfile.cmake
+
+# FetchContent/populated dependency work dirs
+_deps/
+
+# Binary artifacts
 *.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
 *.dSYM/
+
+# OFX plugin/package outputs
+*.ofx
+*.ofx.bundle/
+*.tar.gz
+
+# IDE/editor local state
+.idea/
+.vscode/
