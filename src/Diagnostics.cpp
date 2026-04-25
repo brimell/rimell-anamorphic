@@ -81,13 +81,11 @@ void initLogConfig() {
     }
   }
 
-  const char *fileEnv = std::getenv("RIMELL_LOG_FILE");
-  if (fileEnv && *fileEnv) {
-    FILE *file = std::fopen(fileEnv, "a");
-    if (file) {
-      gConfig.stream = file;
-      gConfig.ownsStream = true;
-    }
+  static const char *kLogFilePath = "/tmp/RimellAnamorphic.log";
+  FILE *file = std::fopen(kLogFilePath, "a");
+  if (file) {
+    gConfig.stream = file;
+    gConfig.ownsStream = true;
   }
 }
 
