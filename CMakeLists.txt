@@ -40,6 +40,11 @@ set(OFX_CONTENTS_DIR "${OFX_BUNDLE_ROOT}/Contents")
 set(OFX_BINARY_DIR "${OFX_CONTENTS_DIR}/${OFX_ARCH_DIR}")
 
 add_library(${OFX_PLUGIN_NAME} MODULE
+  src/Describe.cpp
+  src/HostSuites.cpp
+  src/ParameterDefinition.cpp
+  src/Parameters.cpp
+  src/Render.cpp
   src/RimellAnamorphic.cpp
 )
 
