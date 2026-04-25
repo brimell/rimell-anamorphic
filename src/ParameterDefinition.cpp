@@ -48,7 +48,7 @@ void addBooleanParam(OfxParamSetHandle paramSet, const char *name, const char *l
 
 void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *label, int defaultValue,
                     const char *option0, const char *option1, const char *option2,
-                    const char *option3, const char *hint) {
+                    const char *option3, const char *option4, const char *hint) {
   OfxPropertySetHandle props = nullptr;
   gParameterSuite->paramDefine(paramSet, kOfxParamTypeChoice, name, &props);
   gPropertySuite->propSetString(props, kOfxPropLabel, 0, label);
@@ -60,6 +60,9 @@ void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *la
   }
   if (option3) {
     gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 3, option3);
+  }
+  if (option4) {
+    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 4, option4);
   }
   if (hint) {
     gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);

@@ -56,7 +56,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "anamorphicTransfer", "Anamorphic Transfer", 1.0, 0.0, 1.0, 0.0, 1.0,
                  "Blends from spherical source mapping to the synthetic anamorphic view map.");
   addChoiceParam(paramSet, "lensIdentity", "Lens Identity", 1, "Custom", "Modern 1.33x",
-                 "Classic 2x", "Scope Soft Edge",
+                 "Classic 2x", "Scope Soft Edge", "Organisation",
                  "Preset identity used to drive geometry, highlight, flare, and ghost scaling.");
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
   addDoubleParam(paramSet, "axisWarp", "Axis Warp", 0.0, 0.0, 1.0, 0.0, 1.0,

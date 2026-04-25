@@ -53,7 +53,7 @@ RenderParams readParams(OfxImageEffectHandle effect) {
   params.anamorphicTransfer =
       std::max(0.0f, std::min(1.0f, static_cast<float>(
                                         getDoubleParam(paramSet, "anamorphicTransfer", params.anamorphicTransfer))));
-  params.lensIdentity = std::max(0, std::min(3, getIntParam(paramSet, "lensIdentity", params.lensIdentity)));
+    params.lensIdentity = std::max(0, std::min(4, getIntParam(paramSet, "lensIdentity", params.lensIdentity)));
   params.squeezeRatio = static_cast<float>(getDoubleParam(paramSet, "squeezeRatio", params.squeezeRatio));
   params.axisWarp = std::max(0.0f, std::min(1.0f, static_cast<float>(getDoubleParam(paramSet, "axisWarp", params.axisWarp))));
   params.centerProtection =
