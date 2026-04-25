@@ -18,7 +18,7 @@ OfxStatus describe(OfxImageEffectHandle effect) {
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 0, kOfxBitDepthByte);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 1, kOfxBitDepthShort);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 2, kOfxBitDepthFloat);
-  gPropertySuite->propSetInt(props, kOfxImageEffectPropSupportsMultipleClipDepths, 0, 0);
+  gPropertySuite->propSetInt(props, kOfxImageEffectPropSupportsMultipleClipDepths, 0, 1);
   gPropertySuite->propSetInt(props, kOfxImageEffectPluginPropSingleInstance, 0, 0);
   gPropertySuite->propSetInt(props, kOfxImageEffectPluginPropHostFrameThreading, 0, 1);
   gPropertySuite->propSetString(props, kOfxImageEffectPluginRenderThreadSafety, 0,
@@ -44,6 +44,9 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   gEffectSuite->clipDefine(effect, kDepthClipName, &props);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentAlpha);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 1, kOfxImageComponentRGBA);
+  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 0, kOfxBitDepthByte);
+  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 1, kOfxBitDepthShort);
+  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 2, kOfxBitDepthFloat);
   gPropertySuite->propSetInt(props, kOfxImageClipPropOptional, 0, 1);
 
   OfxParamSetHandle paramSet = nullptr;
