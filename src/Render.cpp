@@ -53,6 +53,15 @@ struct DepthImage {
   DepthComponents components = DepthComponents::Alpha;
 };
 
+struct DepthSample {
+  float rawDepth = 0.0f;
+  float depth01 = 0.0f;
+  float focusMask = 1.0f;
+  float defocusMask = 0.0f;
+  float subjectProtection = 1.0f;
+  float defocusRadius = 0.0f;
+};
+
 template <typename T>
 float sampleDepthAlphaBilinear(const Image &image, float x, float y, float scale) {
   if (!image.data || image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2 ||
@@ -226,6 +235,11 @@ float safeRadius(float px, float maxPx = 64.0f) {
   return std::max(0.0f, std::min(px, maxPx));
 }
 
+bool depthActive(const DepthImage *depth, const RenderParams &params) {
+  return depth && depth->image && depth->image->data && params.depthMapEnabled != 0 &&
+         params.depthInfluence > 0.0001f;
+}
+
 float sampleDepthNormalisedAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
   const float raw = sampleDepthAt(depth, x, y, params);
   float depth01 = safeDepth01(raw);
@@ -235,41 +249,58 @@ float sampleDepthNormalisedAt(const DepthImage *depth, float x, float y, const R
   return depth01;
 }
 
-float depthFocusMaskFromDepth(float depthValue, const RenderParams &params) {
+float depthDefocusFromDepth(float depthValue, const RenderParams &params) {
   const float depth01 = safeDepth01(depthValue);
   const float focusDistance = std::abs(depth01 - params.focusDepth);
   const float focusRange = clamp01(params.depthFocusRange);
-  const float focusMask = smoothstep(focusRange, 1.0f, focusDistance);
-  return clamp01(focusMask);
+  const float falloff = std::max(0.0f, params.depthFalloff);
+  const float end = clamp01(focusRange + falloff);
+  if (end <= focusRange + 0.0001f) {
+    return focusDistance > focusRange ? 1.0f : 0.0f;
+  }
+  return clamp01(smoothstep(focusRange, end, focusDistance));
 }
 
 float depthFocusMaskAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
+  if (!depth || !depth->image || !depth->image->data) {
+    return 1.0f;
+  }
+
+  const float depthValue = sampleDepthNormalisedAt(depth, x, y, params);
+  const float defocus = depthDefocusFromDepth(depthValue, params);
+  return clamp01(1.0f - defocus);
+}
+
+float depthDefocusMaskAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
   if (!depth || !depth->image || !depth->image->data) {
     return 0.0f;
   }
 
   const float depthValue = sampleDepthNormalisedAt(depth, x, y, params);
-  return depthFocusMaskFromDepth(depthValue, params);
+  const float defocus = depthDefocusFromDepth(depthValue, params);
+  if (!depthActive(depth, params)) {
+    return 0.0f;
+  }
+  return clamp01(defocus * params.depthInfluence);
+}
+
+float depthSubjectProtectionAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
+  if (!depth || !depth->image || !depth->image->data || !depthActive(depth, params)) {
+    return 1.0f;
+  }
+
+  const float depthValue = sampleDepthNormalisedAt(depth, x, y, params);
+  const float defocus = depthDefocusFromDepth(depthValue, params);
+  return clamp01(1.0f - defocus * params.subjectProtection);
 }
 
 float depthDefocusRadiusAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
-  if (!depth || !depth->image || !depth->image->data || params.depthMapEnabled == 0 ||
-      params.depthInfluence <= 0.0001f) {
+  if (!depth || !depth->image || !depth->image->data) {
     return 0.0f;
   }
 
-  const float focusMask = depthFocusMaskAt(depth, x, y, params);
-  return safeRadius(params.depthDefocusPixels * params.depthInfluence * focusMask, 64.0f);
-}
-
-float depthDefocusMaskAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
-  if (!depth || !depth->image || !depth->image->data || params.depthMapEnabled == 0 ||
-      params.depthInfluence <= 0.0001f) {
-    return 0.0f;
-  }
-
-  const float focusMask = depthFocusMaskAt(depth, x, y, params);
-  return clamp01(focusMask * params.depthInfluence);
+  const float defocus = depthDefocusMaskAt(depth, x, y, params);
+  return safeRadius(params.depthDefocusPixels * defocus, 64.0f);
 }
 
 float highlightMatteAt(const Pixel &sample, const RenderParams &params) {
@@ -352,10 +383,16 @@ Pixel opticalBaseSample(const Image &source, float x, float y, int width, int he
     const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
     const float edge = smoothstep(0.15f, 1.05f, std::sqrt(nx * nx + ny * ny));
     const float focusBias = 0.35f + std::abs(params.focusDistance - 0.5f) * 1.3f;
-    const float radiusPixels = params.longitudinalCA * focusBias * edge * 4.0f;
+    const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
+    const bool hasDepth = depthActive(depth, params);
+    const float depthScale = hasDepth ? (0.2f + depthDefocus * 0.8f) : 1.0f;
+    const float radiusPixels = params.longitudinalCA * focusBias * edge * 4.0f * depthScale;
     const Pixel redDefocus = channelDefocusSample<T>(source, x, y, width, height, params, radiusPixels);
     const Pixel blueDefocus = channelDefocusSample<T>(source, x, y, width, height, params, radiusPixels * 0.65f);
-    const float amount = clamp01(params.longitudinalCA * (0.35f + edge * 0.65f));
+    float amount = clamp01(params.longitudinalCA * (0.35f + edge * 0.65f));
+    if (hasDepth) {
+      amount *= clamp01(depthDefocus * 1.2f);
+    }
     base.r = lerp(base.r, redDefocus.r, amount);
     base.b = lerp(base.b, blueDefocus.b, amount);
   }
@@ -377,18 +414,22 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
 
   Pixel result = base;
 
-    const float depthBlurRadius = depthDefocusRadiusAt(depth, x, y, params);
+  const bool hasDepth = depthActive(depth, params);
+  const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
+  const float depthBlurRadius = depthDefocusRadiusAt(depth, x, y, params);
+  const float depthSoftnessScale = hasDepth ? (0.2f + depthDefocus * 0.8f) : 1.0f;
   const float blurRadius =
       params.edgeBlur * edge * params.edgeBlurPixels + params.fieldCurvature * edge * params.fieldCurvaturePixels +
-      depthBlurRadius * 0.35f;
-  if (blurRadius > 0.05f) {
+      depthBlurRadius * 0.5f;
+  const float blurRadiusScaled = blurRadius * depthSoftnessScale;
+  if (blurRadiusScaled > 0.05f) {
     Pixel blur{};
     float weight = 0.0f;
     const int blurSamples = params.renderQuality == 0 ? 2 : (params.renderQuality == 2 ? 4 : 3);
     for (int i = -blurSamples; i <= blurSamples; ++i) {
       const float t = static_cast<float>(i) / static_cast<float>(blurSamples);
       const float w = 1.0f - std::abs(t) * 0.55f;
-      const Pixel sample = warpedSourceSample<T>(source, x + t * blurRadius, y + t * blurRadius * 0.25f, width,
+      const Pixel sample = warpedSourceSample<T>(source, x + t * blurRadiusScaled, y + t * blurRadiusScaled * 0.25f, width,
                                                  height, params, 0.0f);
       blur.r += sample.r * w;
       blur.g += sample.g * w;
@@ -400,10 +441,11 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
     blur.g /= weight;
     blur.b /= weight;
     blur.a /= weight;
-    result = lerpPixel(result, blur, clamp01(edge * (params.edgeBlur + params.fieldCurvature)));
+    result = lerpPixel(result, blur, clamp01(edge * (params.edgeBlur + params.fieldCurvature) * depthSoftnessScale));
   }
 
-  const float smearRadius = edge * (params.tangentialSmear + params.horizontalSmear) * params.smearPixels;
+  const float smearDepthScale = hasDepth ? (0.15f + depthDefocus * 0.85f) : 1.0f;
+  const float smearRadius = edge * (params.tangentialSmear + params.horizontalSmear) * params.smearPixels * smearDepthScale;
   if (smearRadius > 0.05f) {
     Pixel smear{};
     float weight = 0.0f;
@@ -422,7 +464,7 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
     smear.g /= weight;
     smear.b /= weight;
     smear.a /= weight;
-    result = lerpPixel(result, smear, clamp01(edge * (params.tangentialSmear + params.horizontalSmear)));
+    result = lerpPixel(result, smear, clamp01(edge * (params.tangentialSmear + params.horizontalSmear) * smearDepthScale));
   }
 
   if (params.verticalSharpness > 0.001f) {
@@ -501,6 +543,9 @@ template <typename T>
 Pixel lensAdditives(const Image &source, float x, float y, int width, int height, const RenderParams &params,
                     const Pixel &base, const DepthImage *depth) {
   Pixel add{};
+  const bool hasDepth = depthActive(depth, params);
+  const float localDefocus = depthDefocusMaskAt(depth, x, y, params);
+  const float localSubjectProtection = depthSubjectProtectionAt(depth, x, y, params);
 
   const float flareAngle = params.flareAngle * kPi / 180.0f;
   const float dirX = std::cos(flareAngle);
@@ -519,7 +564,13 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float sx = x + dirX * t * flareSpan;
       const float sy = y + dirY * t * flareSpan;
       const float h = highlightAt<T>(source, sx, sy, width, height, params, params.flareThreshold);
-      const float w = std::exp(-std::abs(t) * params.flareFalloff) * h * params.flareIntensity;
+      float depthGate = 1.0f;
+      if (hasDepth) {
+        const float sampleDefocus = depthDefocusMaskAt(depth, sx, sy, params);
+        const float sampleSubjectProtection = depthSubjectProtectionAt(depth, sx, sy, params);
+        depthGate = clamp01(sampleDefocus + (1.0f - sampleSubjectProtection) * 0.75f);
+      }
+      const float w = std::exp(-std::abs(t) * params.flareFalloff) * h * params.flareIntensity * depthGate;
       add.r += params.flareColour.r * w;
       add.g += params.flareColour.g * w;
       add.b += params.flareColour.b * w;
@@ -547,7 +598,12 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
         const float rx = ox * cosR - oy * sinR;
         const float ry = ox * sinR + oy * cosR;
         const Pixel sample = mappedSample<T>(source, x + rx, y + ry, width, height, params);
-        const float h = smoothstep(params.flareThreshold * params.bloomThresholdScale, 1.0f, luminance(sample));
+        float h = smoothstep(params.flareThreshold * params.bloomThresholdScale, 1.0f, luminance(sample));
+        if (hasDepth) {
+          const float sampleDefocus = depthDefocusMaskAt(depth, x + rx, y + ry, params);
+          const float depthGate = lerp(1.0f, std::max(0.1f, sampleDefocus), clamp01(params.depthBloomBoost));
+          h *= depthGate;
+        }
         const float w = h / static_cast<float>(ring);
         bloom.r += sample.r * w;
         bloom.g += sample.g * w;
@@ -563,9 +619,10 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float edge = std::max(map.edgeMask, smoothstep(0.35f, 1.1f, map.radius));
       const float bokehEdgeKeep = 1.0f - edge * params.bokehEdgeFalloff * params.bloomEdgeKeepScale;
       const float protect = lerp(1.0f, clamp01(luminance(base) * 2.0f), params.blackLiftProtection);
+        const float depthBloomGate = hasDepth ? (0.15f + 0.85f * localDefocus) : 1.0f;
       const float amount =
           (params.veil * params.bloomVeilScale + params.highlightCream * params.bloomCreamScale) * protect *
-          bokehEdgeKeep;
+          bokehEdgeKeep * depthBloomGate;
       add.r += bloom.r * amount;
       add.g += bloom.g * amount;
       add.b += bloom.b * amount;
@@ -585,7 +642,13 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float sx = cx - (x - cx) * scale * lensIdentityGhostScaleX(params);
       const float sy = cy - (y - cy) * scale * lensIdentityGhostScaleY(params);
       const Pixel ghost = mappedSample<T>(source, sx, sy, width, height, params);
-      const float h = smoothstep(params.flareThreshold, 1.0f, luminance(ghost));
+      float h = smoothstep(params.flareThreshold, 1.0f, luminance(ghost));
+      if (hasDepth) {
+        const float sampleDefocus = depthDefocusMaskAt(depth, sx, sy, params);
+        const float sampleSubjectProtection = depthSubjectProtectionAt(depth, sx, sy, params);
+        const float depthGate = clamp01(sampleDefocus + (1.0f - sampleSubjectProtection));
+        h *= depthGate;
+      }
       const float w = h * (params.ghostIntensity / static_cast<float>(i)) * tintShift;
       add.r += ghost.r * params.ghostTint.r * w;
       add.g += ghost.g * params.ghostTint.g * w;
@@ -594,9 +657,11 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
   }
 
   const float centerGlow = smoothstep(params.flareThreshold * 0.9f, 1.0f, luminance(base));
-  add.r += params.veil * centerGlow * params.centerVeilScale;
-  add.g += params.veil * centerGlow * params.centerVeilScale;
-  add.b += params.veil * centerGlow * params.centerVeilScale;
+  const float veilDepthGate = hasDepth ? (0.2f + localDefocus * 0.8f) * (1.0f - localSubjectProtection * 0.6f)
+                                       : 1.0f;
+  add.r += params.veil * centerGlow * params.centerVeilScale * veilDepthGate;
+  add.g += params.veil * centerGlow * params.centerVeilScale * veilDepthGate;
+  add.b += params.veil * centerGlow * params.centerVeilScale * veilDepthGate;
 
   return add;
 }
@@ -684,7 +749,7 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
           debugColor = {d, d, d, 1.0f};
         } else if (debugView == DebugView::DepthFocusMask) {
           const float m = depth ? depthFocusMaskAt(depth, static_cast<float>(x), static_cast<float>(y), params)
-                                : 0.0f;
+                                : 1.0f;
           debugColor = {m, m, m, 1.0f};
         } else if (debugView == DebugView::DepthDefocusRadius) {
           const float r = depth ? depthDefocusRadiusAt(depth, static_cast<float>(x), static_cast<float>(y), params)
@@ -704,13 +769,13 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
       }
 
       Pixel color = opticalBaseSample<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                         params, nullptr);
+                                         params, depth);
       color = edgeCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, color,
                                params, depth);
       color = depthDefocusCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                       color, params, nullptr);
+                                       color, params, depth);
       const Pixel add = lensAdditives<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                         params, color, nullptr);
+                                         params, color, depth);
       color.r += add.r;
       color.g += add.g;
       color.b += add.b;
