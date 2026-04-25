@@ -668,6 +668,29 @@ bool metalEnabled(OfxPropertySetHandle inArgs, void **commandQueue) {
 #endif
 }
 
+bool clipConnected(OfxImageClipHandle clip) {
+  if (!clip) {
+    return false;
+  }
+
+  OfxPropertySetHandle clipProps = nullptr;
+  if (gEffectSuite->clipGetPropertySet(clip, &clipProps) != kOfxStatOK || !clipProps) {
+    return false;
+  }
+
+  int connected = 0;
+  return gPropertySuite->propGetInt(clipProps, kOfxImageClipPropConnected, 0, &connected) == kOfxStatOK &&
+         connected != 0;
+}
+
+bool validateDepthGeometry(const Image &source, const Image &depth) {
+  const int sourceWidth = source.bounds.x2 - source.bounds.x1;
+  const int sourceHeight = source.bounds.y2 - source.bounds.y1;
+  const int depthWidth = depth.bounds.x2 - depth.bounds.x1;
+  const int depthHeight = depth.bounds.y2 - depth.bounds.y1;
+  return sourceWidth == depthWidth && sourceHeight == depthHeight;
+}
+
 float roiPaddingPixels(const RenderParams &params) {
   const float flarePadding = params.flareIntensity > 0.001f
                                  ? params.flareLength * params.flareSpanScale * lensIdentityFlareScale(params) * 512.0f
@@ -788,8 +811,8 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                       params.lensIdentity);
 
             stage = "fetch_depth";
-            bool hasDepth =
-                params.depthMapEnabled != 0 && depthClip && fetchImage(depthClip, time, &depthImageHandle, &depth);
+            bool hasDepth = params.depthMapEnabled != 0 && depthClip && clipConnected(depthClip) &&
+                    fetchImage(depthClip, time, &depthImageHandle, &depth);
             char *depthBitDepth = nullptr;
             char *depthComponents = nullptr;
             if (hasDepth) {
@@ -803,11 +826,32 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 const int depthBpp = bytesPerChannel(depthImage.bitDepth) *
                                      (depthImage.components == DepthComponents::RGBA ? 4 : 1);
                 const bool depthLayoutValid = validateImageLayout(depth, depthBpp);
-                if (!depthLayoutValid) {
+                const bool depthGeometryValid = hasSource ? validateDepthGeometry(source, depth) : true;
+                const bool depthRowDirectionValid = depth.rowBytes > 0;
+                if (!depthLayoutValid || !depthGeometryValid || !depthRowDirectionValid) {
                   logImageLayout(LogLevel::Warn, "render", "depth", depth, depthBpp, false);
+                  if (!depthGeometryValid && hasSource) {
+                    logPrintf(LogLevel::Warn,
+                              "render",
+                              "depth clip disabled due to geometry mismatch source=[%d,%d,%d,%d] depth=[%d,%d,%d,%d]",
+                              source.bounds.x1,
+                              source.bounds.y1,
+                              source.bounds.x2,
+                              source.bounds.y2,
+                              depth.bounds.x1,
+                              depth.bounds.y1,
+                              depth.bounds.x2,
+                              depth.bounds.y2);
+                  }
+                  if (!depthRowDirectionValid) {
+                    logPrintf(LogLevel::Warn,
+                              "render",
+                              "depth clip disabled due to unsupported row direction rowBytes=%d",
+                              depth.rowBytes);
+                  }
                   logPrintf(LogLevel::Warn,
                             "render",
-                            "depth clip disabled due to invalid layout bitDepth=%s components=%s",
+                            "depth clip disabled due to invalid layout/format bitDepth=%s components=%s",
                             depthBitDepth ? depthBitDepth : "(null)",
                             depthComponents ? depthComponents : "(null)");
                   hasDepth = false;
