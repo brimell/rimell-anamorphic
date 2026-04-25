@@ -44,6 +44,7 @@ add_library(${OFX_PLUGIN_NAME} MODULE
   src/HostSuites.cpp
   src/LensMap.cpp
   src/ParameterDefinition.cpp
+  src/ParameterLogic.cpp
   src/Parameters.cpp
   src/Render.cpp
   src/RimellAnamorphic.cpp
@@ -114,6 +115,7 @@ add_custom_target(package-ofx
 add_executable(lens-map-sanity
   tests/lens_map_sanity.cpp
   src/LensMap.cpp
+  src/ParameterLogic.cpp
 )
 
 target_include_directories(lens-map-sanity PRIVATE

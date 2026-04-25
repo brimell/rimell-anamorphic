@@ -43,20 +43,29 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   OfxParamSetHandle paramSet = nullptr;
   gEffectSuite->getParamSet(effect, &paramSet);
 
+  addGroupParam(paramSet, "coreGroup", "Core", 1);
+  addGroupParam(paramSet, "geometryGroup", "Geometry", 1);
+  addGroupParam(paramSet, "highlightGroup", "Highlights / Flares", 0);
+  addGroupParam(paramSet, "edgeGroup", "Edge / CA", 0);
+  addGroupParam(paramSet, "framingGroup", "Framing", 0);
+
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, "Draft", "Preview", "Final",
-                 nullptr, "Scales expensive flare, bloom, blur, and chromatic sampling.");
+                 nullptr, nullptr, "Scales expensive flare, bloom, blur, and chromatic sampling.");
+  addChoiceParam(paramSet, "lookPreset", "Look Preset", 0, "Manual", "Subtle Modern",
+                 "Classic 2x", "Night Flare", "Geometry Only",
+                 "Creative starting points. Manual leaves individual controls unchanged.");
 
   addChoiceParam(paramSet, "inputMode", "Input Mode", 0, "Spherical -> Anamorphic Look",
                  "Real Anamorphic Utility", "Creative Warp", nullptr,
-                 "Spherical mode emulates an anamorphic finish from normal circular-lens footage.");
+                 nullptr, "Spherical mode emulates an anamorphic finish from normal circular-lens footage.");
   addChoiceParam(paramSet, "squeezeMode", "Squeeze Mode", 0, "Off", "Squeeze", "Desqueeze",
-                 nullptr,
+                 nullptr, nullptr,
                  "Utility geometry for real anamorphic plates or creative warps; ignored by the main spherical look mode.");
   addDoubleParam(paramSet, "anamorphicTransfer", "Anamorphic Transfer", 1.0, 0.0, 1.0, 0.0, 1.0,
                  "Blends from spherical source mapping to the synthetic anamorphic view map.");
   addChoiceParam(paramSet, "lensIdentity", "Lens Identity", 1, "Custom", "Modern 1.33x",
-                 "Classic 2x", "Scope Soft Edge", "Organisation",
+                 "Classic 2x", "Scope Soft Edge", nullptr,
                  "Preset identity used to drive geometry, highlight, flare, and ghost scaling.");
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
   addDoubleParam(paramSet, "axisWarp", "Axis Warp", 0.0, 0.0, 1.0, 0.0, 1.0,
@@ -154,6 +163,52 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "letterboxOpacity", "Letterbox Opacity", 0.55, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "guideAspectStrength", "Aspect Guide Strength", 0.85, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "guideSafeStrength", "Safe Guide Strength", 0.45, 0.0, 1.0, 0.0, 1.0);
+
+  const char *core[] = {"mix", "renderQuality", "lookPreset"};
+  for (const char *name : core) {
+    setParamParent(paramSet, name, "coreGroup");
+  }
+
+  const char *geometry[] = {"inputMode", "squeezeMode", "anamorphicTransfer", "lensIdentity",
+                            "squeezeRatio", "axisWarp", "centerProtection", "edgeCompressionStart",
+                            "horizontalFovBoost", "virtualFocalLength", "breathingScale",
+                            "barrel", "mustache", "verticalCompensation", "verticalCompensationScale",
+                            "closeFocusMumps", "faceWidthCompensation", "focusDistance",
+                            "breathingAmount", "mumpsScale", "edgeCompression", "edgeCompressionScale"};
+  for (const char *name : geometry) {
+    setParamParent(paramSet, name, "geometryGroup");
+  }
+
+  const char *highlights[] = {"bokehStretch", "bokehRotation", "bokehEdgeFalloff", "bokehStretchScale",
+                              "bloomPixelScale", "bloomThresholdScale", "bloomRings",
+                              "bloomSamplesPerRing", "bloomEdgeKeepScale", "bloomVeilScale",
+                              "bloomCreamScale", "flareIntensity", "flareLength", "flareColour",
+                              "flareThreshold", "flareAngle", "flareStepDensity", "flareSpanScale",
+                              "flareFalloff", "veil", "bloomRadius", "highlightCream",
+                              "blackLiftProtection", "ghostCount", "ghostSpread", "ghostTint",
+                              "ghostIntensity", "coatingStyle", "coatingWarmResponse",
+                              "coatingCoolResponse", "centerVeilScale"};
+  for (const char *name : highlights) {
+    setParamParent(paramSet, name, "highlightGroup");
+  }
+
+  const char *edge[] = {"edgeBlur", "tangentialSmear", "radialFalloff", "edgeBlurPixels",
+                        "fieldCurvaturePixels", "smearPixels", "lateralCA", "longitudinalCA",
+                        "edgeOnlyCA", "lateralCAPixelScale", "ovalVignette", "vignetteAsymmetry",
+                        "cornerBias", "ovalVignetteScale", "vignetteAsymmetryScale",
+                        "horizontalSmear", "verticalSharpness", "fieldCurvature",
+                        "catEyeStrength", "bokehVignette", "catEyeDimScale",
+                        "bokehVignetteDimScale"};
+  for (const char *name : edge) {
+    setParamParent(paramSet, name, "edgeGroup");
+  }
+
+  const char *framing[] = {"guidesEnabled", "outputAspect", "customOutputAspect", "safeArea",
+                           "letterboxPreview", "letterboxOpacity", "guideAspectStrength",
+                           "guideSafeStrength"};
+  for (const char *name : framing) {
+    setParamParent(paramSet, name, "framingGroup");
+  }
 
   return kOfxStatOK;
 }

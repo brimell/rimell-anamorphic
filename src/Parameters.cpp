@@ -1,6 +1,7 @@
 #include "Parameters.h"
 
 #include "HostSuites.h"
+#include "ParameterLogic.h"
 
 #include <algorithm>
 
@@ -47,21 +48,19 @@ RenderParams readParams(OfxImageEffectHandle effect) {
 
   RenderParams params;
   params.mix = static_cast<float>(getDoubleParam(paramSet, "mix", params.mix));
-  params.renderQuality = std::max(0, std::min(2, getIntParam(paramSet, "renderQuality", params.renderQuality)));
-  params.inputMode = std::max(0, std::min(2, getIntParam(paramSet, "inputMode", params.inputMode)));
-  params.squeezeMode = std::max(0, std::min(2, getIntParam(paramSet, "squeezeMode", params.squeezeMode)));
+  params.renderQuality = getIntParam(paramSet, "renderQuality", params.renderQuality);
+  params.lookPreset = getIntParam(paramSet, "lookPreset", params.lookPreset);
+  params.inputMode = getIntParam(paramSet, "inputMode", params.inputMode);
+  params.squeezeMode = getIntParam(paramSet, "squeezeMode", params.squeezeMode);
   params.anamorphicTransfer =
-      std::max(0.0f, std::min(1.0f, static_cast<float>(
-                                        getDoubleParam(paramSet, "anamorphicTransfer", params.anamorphicTransfer))));
-    params.lensIdentity = std::max(0, std::min(4, getIntParam(paramSet, "lensIdentity", params.lensIdentity)));
+      static_cast<float>(getDoubleParam(paramSet, "anamorphicTransfer", params.anamorphicTransfer));
+  params.lensIdentity = getIntParam(paramSet, "lensIdentity", params.lensIdentity);
   params.squeezeRatio = static_cast<float>(getDoubleParam(paramSet, "squeezeRatio", params.squeezeRatio));
-  params.axisWarp = std::max(0.0f, std::min(1.0f, static_cast<float>(getDoubleParam(paramSet, "axisWarp", params.axisWarp))));
+  params.axisWarp = static_cast<float>(getDoubleParam(paramSet, "axisWarp", params.axisWarp));
   params.centerProtection =
-      std::max(0.0f, std::min(1.0f, static_cast<float>(
-                                        getDoubleParam(paramSet, "centerProtection", params.centerProtection))));
+      static_cast<float>(getDoubleParam(paramSet, "centerProtection", params.centerProtection));
   params.edgeCompressionStart =
-      std::max(0.0f, std::min(1.0f, static_cast<float>(
-                                        getDoubleParam(paramSet, "edgeCompressionStart", params.edgeCompressionStart))));
+      static_cast<float>(getDoubleParam(paramSet, "edgeCompressionStart", params.edgeCompressionStart));
   params.horizontalFovBoost =
       static_cast<float>(getDoubleParam(paramSet, "horizontalFovBoost", params.horizontalFovBoost));
   params.virtualFocalLength =
@@ -142,8 +141,7 @@ RenderParams readParams(OfxImageEffectHandle effect) {
 
   params.lateralCA = static_cast<float>(getDoubleParam(paramSet, "lateralCA", params.lateralCA));
   params.longitudinalCA =
-      std::max(0.0f, std::min(1.0f, static_cast<float>(
-                                        getDoubleParam(paramSet, "longitudinalCA", params.longitudinalCA))));
+      static_cast<float>(getDoubleParam(paramSet, "longitudinalCA", params.longitudinalCA));
   params.edgeOnlyCA = static_cast<float>(getIntParam(paramSet, "edgeOnlyCA", static_cast<int>(params.edgeOnlyCA)));
   params.lateralCAPixelScale =
       static_cast<float>(getDoubleParam(paramSet, "lateralCAPixelScale", params.lateralCAPixelScale));
@@ -191,7 +189,7 @@ RenderParams readParams(OfxImageEffectHandle effect) {
   params.guideSafeStrength =
       static_cast<float>(getDoubleParam(paramSet, "guideSafeStrength", params.guideSafeStrength));
 
-  return params;
+  return normalizeRenderParams(params);
 }
 
 float aspectValue(int index, float customOutputAspect) {

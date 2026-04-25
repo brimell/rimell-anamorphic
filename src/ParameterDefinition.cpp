@@ -46,6 +46,13 @@ void addBooleanParam(OfxParamSetHandle paramSet, const char *name, const char *l
   }
 }
 
+void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *label, int open) {
+  OfxPropertySetHandle props = nullptr;
+  gParameterSuite->paramDefine(paramSet, kOfxParamTypeGroup, name, &props);
+  gPropertySuite->propSetString(props, kOfxPropLabel, 0, label);
+  gPropertySuite->propSetInt(props, kOfxParamPropGroupOpen, 0, open);
+}
+
 void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *label, int defaultValue,
                     const char *option0, const char *option1, const char *option2,
                     const char *option3, const char *option4, const char *hint) {
@@ -79,6 +86,14 @@ void addRGBParam(OfxParamSetHandle paramSet, const char *name, const char *label
   gPropertySuite->propSetDouble(props, kOfxParamPropDefault, 2, defaultValue.b);
   if (hint) {
     gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);
+  }
+}
+
+void setParamParent(OfxParamSetHandle paramSet, const char *name, const char *parent) {
+  OfxParamHandle handle = nullptr;
+  OfxPropertySetHandle props = nullptr;
+  if (gParameterSuite->paramGetHandle(paramSet, name, &handle, &props) == kOfxStatOK && props) {
+    gPropertySuite->propSetString(props, kOfxParamPropParent, 0, parent);
   }
 }
 
