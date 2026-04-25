@@ -47,7 +47,8 @@ struct DepthImage {
 
 template <typename T>
 float sampleDepthAlphaBilinear(const Image &image, float x, float y, float scale) {
-  if (!image.data || image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2) {
+  if (!image.data || image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2 ||
+      !std::isfinite(x) || !std::isfinite(y)) {
     return 0.0f;
   }
 
@@ -175,6 +176,10 @@ float sampleDepthAt(const DepthImage *depth, float x, float y, const RenderParam
     return 0.0f;
   }
 
+  if (!std::isfinite(x) || !std::isfinite(y)) {
+    return 0.0f;
+  }
+
   float value = 0.0f;
   if (depth->components == DepthComponents::Alpha) {
     if (depth->bitDepth == DepthBitDepth::Byte) {
@@ -194,6 +199,10 @@ float sampleDepthAt(const DepthImage *depth, float x, float y, const RenderParam
       sample = sampleBilinear<OfxRGBAColourF>(*depth->image, x, y);
     }
     value = luminance(sample);
+  }
+
+  if (!std::isfinite(value)) {
+    return 0.0f;
   }
 
   value = clamp01(value);
@@ -799,7 +808,7 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
   Image source{};
   Image depth{};
   Image output{};
-  DepthImage depthImage;
+  DepthImage depthImage{};
   OfxStatus status = kOfxStatOK;
 
   try {
