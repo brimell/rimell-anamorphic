@@ -18,7 +18,9 @@ double getDoubleParam(OfxParamSetHandle paramSet, const char *name, double fallb
   }
 
   double value = fallback;
-  gParameterSuite->paramGetValue(handle, &value);
+    if (gParameterSuite->paramGetValue(handle, &value) != kOfxStatOK) {
+        return fallback;
+    }
   return value;
 }
 
@@ -33,7 +35,9 @@ int getIntParam(OfxParamSetHandle paramSet, const char *name, int fallback) {
   }
 
   int value = fallback;
-  gParameterSuite->paramGetValue(handle, &value);
+    if (gParameterSuite->paramGetValue(handle, &value) != kOfxStatOK) {
+        return fallback;
+    }
   return value;
 }
 
@@ -50,7 +54,9 @@ Vec3 getRGBParam(OfxParamSetHandle paramSet, const char *name, Vec3 fallback) {
   double r = fallback.r;
   double g = fallback.g;
   double b = fallback.b;
-  gParameterSuite->paramGetValue(handle, &r, &g, &b);
+    if (gParameterSuite->paramGetValue(handle, &r, &g, &b) != kOfxStatOK) {
+        return fallback;
+    }
   return {static_cast<float>(r), static_cast<float>(g), static_cast<float>(b)};
 }
 

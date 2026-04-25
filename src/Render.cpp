@@ -9,7 +9,6 @@
 #include "PixelAccess.h"
 #include "RenderCore.h"
 
-#include "ofxGPURender.h"
 #include "ofxPixels.h"
 
 #include <algorithm>
@@ -758,6 +757,10 @@ bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *ima
 
 bool fetchOptionalImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *imageHandle,
                         Image *image) {
+  if (!imageHandle || !image || !gEffectSuite || !gPropertySuite) {
+    return false;
+  }
+
   *imageHandle = nullptr;
   *image = {};
 
@@ -781,24 +784,6 @@ std::string clipPropertyName(const char *prefix, const char *clipName) {
   std::string name(prefix);
   name += clipName;
   return name;
-}
-
-bool metalEnabled(OfxPropertySetHandle inArgs, void **commandQueue) {
-#ifdef __APPLE__
-  int enabled = 0;
-  if (!inArgs || !commandQueue ||
-      gPropertySuite->propGetInt(inArgs, kOfxImageEffectPropMetalEnabled, 0, &enabled) != kOfxStatOK ||
-      enabled == 0) {
-    return false;
-  }
-  return gPropertySuite->propGetPointer(inArgs, kOfxImageEffectPropMetalCommandQueue, 0, commandQueue) ==
-             kOfxStatOK &&
-         *commandQueue != nullptr;
-#else
-  (void)inArgs;
-  (void)commandQueue;
-  return false;
-#endif
 }
 
 bool clipConnected(OfxImageClipHandle clip) {
@@ -989,10 +974,14 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
             if (hasDepth) {
               if (!getImageString(depthImageHandle, kOfxImageEffectPropPixelDepth, &depthBitDepth) ||
                   !getImageString(depthImageHandle, kOfxImageEffectPropComponents, &depthComponents) ||
+                  !stringsMatch(depthBitDepth, outputBitDepth) ||
+                  !stringsMatch(depthComponents, kOfxImageComponentRGBA) ||
                   !parseDepthBitDepth(depthBitDepth, &depthImage.bitDepth) ||
                   !parseDepthComponents(depthComponents, &depthImage.components)) {
                 hasDepth = false;
-                logMessage(LogLevel::Warn, "render", "depth clip present but format unsupported, depth disabled");
+                logMessage(LogLevel::Warn,
+                           "render",
+                           "depth clip present but format incompatible with output, depth disabled");
               } else {
                 const int depthBpp = bytesPerChannel(depthImage.bitDepth) *
                                      (depthImage.components == DepthComponents::RGBA ? 4 : 1);
@@ -1044,28 +1033,19 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 params.edgeCropScale = automaticEdgeCropScale(source, source.bounds.x2 - source.bounds.x1,
                                                              source.bounds.y2 - source.bounds.y1, params);
               }
-              void *metalCommandQueue = nullptr;
-              // Keep depth-connected renders on CPU to avoid host-specific GPU path instability.
-              const bool forceCpuDepthPath = depthClipIsConnected;
-              const bool useMetal = hasSource && !hasDepth && !forceCpuDepthPath &&
-                                    metalEnabled(inArgs, &metalCommandQueue);
+              const bool depthDebugView = params.debugView == static_cast<int>(DebugView::Depth);
+              const bool depthUsedForProcessing = hasDepth && depthDebugView;
+              const bool useMetal = false;
               logPrintf(LogLevel::Info,
                         "render",
-                        "render path source=%d depth=%d depthConnected=%d metal=%d outputBitDepth=%s",
+                        "render path source=%d depth=%d depthUsed=%d depthConnected=%d metal=%d outputBitDepth=%s",
                         hasSource ? 1 : 0,
                         hasDepth ? 1 : 0,
+                        depthUsedForProcessing ? 1 : 0,
                         depthClipIsConnected ? 1 : 0,
                         useMetal ? 1 : 0,
                         outputBitDepth ? outputBitDepth : "(null)");
-              if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
-                ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalFloat");
-                timer.setResult("in_progress");
-                status = renderMetalFloat(metalCommandQueue, source, output, renderWindow, params);
-                timer.setResult(ofxStatusToString(status));
-              } else if (useMetal) {
-                status = kOfxStatGPURenderFailed;
-                logMessage(LogLevel::Error, "render", "metal is enabled but output is not float RGBA");
-              } else if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
+              if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
                 if (hasSource) {
                   logPrintf(LogLevel::Debug,
                             "render",
@@ -1075,10 +1055,11 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                             source.rowBytes,
                             output.data,
                             output.rowBytes,
-                            hasDepth ? depth.data : nullptr,
-                            hasDepth ? depth.rowBytes : 0);
+                            depthUsedForProcessing ? depth.data : nullptr,
+                            depthUsedForProcessing ? depth.rowBytes : 0);
                   status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params,
-                                                       hasDepth ? &depthImage : nullptr, "byte");
+                                                       depthUsedForProcessing ? &depthImage : nullptr,
+                                                       "byte");
                 } else {
                   fillEmptyTyped<OfxRGBAColourB>(output, renderWindow);
                 }
@@ -1092,10 +1073,11 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                             source.rowBytes,
                             output.data,
                             output.rowBytes,
-                            hasDepth ? depth.data : nullptr,
-                            hasDepth ? depth.rowBytes : 0);
+                            depthUsedForProcessing ? depth.data : nullptr,
+                            depthUsedForProcessing ? depth.rowBytes : 0);
                   status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params,
-                                                       hasDepth ? &depthImage : nullptr, "short");
+                                                       depthUsedForProcessing ? &depthImage : nullptr,
+                                                       "short");
                 } else {
                   fillEmptyTyped<OfxRGBAColourS>(output, renderWindow);
                 }
@@ -1109,10 +1091,11 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                             source.rowBytes,
                             output.data,
                             output.rowBytes,
-                            hasDepth ? depth.data : nullptr,
-                            hasDepth ? depth.rowBytes : 0);
+                            depthUsedForProcessing ? depth.data : nullptr,
+                            depthUsedForProcessing ? depth.rowBytes : 0);
                   status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params,
-                                                       hasDepth ? &depthImage : nullptr, "float");
+                                                       depthUsedForProcessing ? &depthImage : nullptr,
+                                                       "float");
                 } else {
                   fillEmptyTyped<OfxRGBAColourF>(output, renderWindow);
                 }
