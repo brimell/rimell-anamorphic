@@ -298,10 +298,11 @@ Current v0.1 limitations:
 
 ## Build
 
-The Makefile build path works without CMake:
+Use CMake to configure and build:
 
 ```sh
-make
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
 ```
 
 The built bundle is written to:
@@ -313,7 +314,7 @@ build/RimellAnamorphic.ofx.bundle
 Install for the current macOS user:
 
 ```sh
-make install
+cmake --install build
 ```
 
 By default this installs to:
@@ -323,11 +324,3 @@ By default this installs to:
 ```
 
 Restart DaVinci Resolve after installation. The effect appears under `Rimell/Lens` as `Rimell Anamorphic`.
-
-If CMake is available, this also works:
-
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
-cmake --install build
-```
