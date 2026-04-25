@@ -83,7 +83,9 @@ void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *lab
 
 void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *label, int defaultValue,
                     const char *option0, const char *option1, const char *option2,
-                    const char *option3, const char *option4, const char *hint) {
+                    const char *option3, const char *option4, const char *option5,
+                    const char *option6, const char *option7, const char *option8,
+                    const char *option9, const char *option10, const char *hint) {
   if (!paramSet || !name || !label || !option0 || !option1 || !gParameterSuite || !gPropertySuite) {
     return;
   }
@@ -105,6 +107,24 @@ void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *la
   }
   if (option4) {
     gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 4, option4);
+  }
+  if (option5) {
+    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 5, option5);
+  }
+  if (option6) {
+    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 6, option6);
+  }
+  if (option7) {
+    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 7, option7);
+  }
+  if (option8) {
+    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 8, option8);
+  }
+  if (option9) {
+    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 9, option9);
+  }
+  if (option10) {
+    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 10, option10);
   }
   if (hint) {
     gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);

@@ -89,9 +89,19 @@ OfxStatus pluginMain(const char *action, const void *handle, OfxPropertySetHandl
       actionTimer.setResult(ofxStatusToString(status));
       return status;
     }
-    if (std::strcmp(action, kOfxActionCreateInstance) == 0 ||
-        std::strcmp(action, kOfxActionDestroyInstance) == 0 ||
-        std::strcmp(action, kOfxImageEffectActionBeginSequenceRender) == 0 ||
+    if (std::strcmp(action, kOfxActionCreateInstance) == 0) {
+      stage = "create_instance";
+      const OfxStatus status = createInstance(effect);
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
+    }
+    if (std::strcmp(action, kOfxActionDestroyInstance) == 0) {
+      stage = "destroy_instance";
+      const OfxStatus status = destroyInstance(effect);
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
+    }
+    if (std::strcmp(action, kOfxImageEffectActionBeginSequenceRender) == 0 ||
         std::strcmp(action, kOfxImageEffectActionEndSequenceRender) == 0) {
       stage = "lifecycle_noop";
       actionTimer.setResult(ofxStatusToString(kOfxStatOK));

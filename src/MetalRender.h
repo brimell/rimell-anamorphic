@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Types.h"
+#include "RenderTypes.h"
 
 #include "ofxCore.h"
 #include "ofxGPURender.h"
@@ -8,11 +8,9 @@
 namespace rimell {
 
 #ifdef __APPLE__
-OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image &output,
-                           const OfxRectI &renderWindow, const RenderParams &params);
+OfxStatus renderMetal(const RenderContext &ctx, const RenderParams &params);
 #else
-inline OfxStatus renderMetalFloat(void *, const Image &, const Image &, const OfxRectI &,
-                                  const RenderParams &) {
+inline OfxStatus renderMetal(const RenderContext &, const RenderParams &) {
   return kOfxStatGPURenderFailed;
 }
 #endif

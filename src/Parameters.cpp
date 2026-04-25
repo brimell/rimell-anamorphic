@@ -68,7 +68,9 @@ RenderParams readParams(OfxImageEffectHandle effect) {
 
   RenderParams params;
   params.mix = static_cast<float>(getDoubleParam(paramSet, "mix", params.mix));
-    params.debugView = getIntParam(paramSet, "debugView", params.debugView);
+  params.debugView = getIntParam(paramSet, "debugView", params.debugView);
+  params.processingBackend = getIntParam(paramSet, "processingBackend", params.processingBackend);
+  params.metalSafety = getIntParam(paramSet, "metalSafety", params.metalSafety);
   params.renderQuality = getIntParam(paramSet, "renderQuality", params.renderQuality);
   params.lookPreset = getIntParam(paramSet, "lookPreset", params.lookPreset);
   params.inputMode = getIntParam(paramSet, "inputMode", params.inputMode);
