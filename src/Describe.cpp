@@ -103,7 +103,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "depthDefocusPixels", "Depth Defocus Pixels", 18.0, 0.0, 160.0, 0.0, 60.0);
   addDoubleParam(paramSet, "depthBloomBoost", "Depth Bloom Boost", 0.65, 0.0, 3.0, 0.0, 1.5);
   // Backward compatibility for older saved projects.
-  addDoubleParam(paramSet, "halationExposureThreshold", "", 0.5, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "halationExposureThreshold", "Legacy Halation Exposure Threshold", 0.5,
+                 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
   addDoubleParam(paramSet, "axisWarp", "Axis Warp", 0.0, 0.0, 1.0, 0.0, 1.0,
                  "Adds user-controlled horizontal/vertical separation on top of the selected lens identity.");

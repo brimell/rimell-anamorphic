@@ -8,6 +8,10 @@
 namespace rimell {
 
 double getDoubleParam(OfxParamSetHandle paramSet, const char *name, double fallback) {
+    if (!paramSet || !name || !gParameterSuite) {
+        return fallback;
+    }
+
   OfxParamHandle handle = nullptr;
   if (gParameterSuite->paramGetHandle(paramSet, name, &handle, nullptr) != kOfxStatOK || !handle) {
     return fallback;
@@ -19,6 +23,10 @@ double getDoubleParam(OfxParamSetHandle paramSet, const char *name, double fallb
 }
 
 int getIntParam(OfxParamSetHandle paramSet, const char *name, int fallback) {
+    if (!paramSet || !name || !gParameterSuite) {
+        return fallback;
+    }
+
   OfxParamHandle handle = nullptr;
   if (gParameterSuite->paramGetHandle(paramSet, name, &handle, nullptr) != kOfxStatOK || !handle) {
     return fallback;
@@ -30,6 +38,10 @@ int getIntParam(OfxParamSetHandle paramSet, const char *name, int fallback) {
 }
 
 Vec3 getRGBParam(OfxParamSetHandle paramSet, const char *name, Vec3 fallback) {
+    if (!paramSet || !name || !gParameterSuite) {
+        return fallback;
+    }
+
   OfxParamHandle handle = nullptr;
   if (gParameterSuite->paramGetHandle(paramSet, name, &handle, nullptr) != kOfxStatOK || !handle) {
     return fallback;
@@ -44,7 +56,9 @@ Vec3 getRGBParam(OfxParamSetHandle paramSet, const char *name, Vec3 fallback) {
 
 RenderParams readParams(OfxImageEffectHandle effect) {
   OfxParamSetHandle paramSet = nullptr;
-  gEffectSuite->getParamSet(effect, &paramSet);
+    if (!effect || !gEffectSuite || gEffectSuite->getParamSet(effect, &paramSet) != kOfxStatOK || !paramSet) {
+        return normalizeRenderParams(RenderParams{});
+    }
 
   RenderParams params;
   params.mix = static_cast<float>(getDoubleParam(paramSet, "mix", params.mix));
