@@ -42,6 +42,8 @@ struct RenderParams {
   int depthMapInvert = 0;
   float focusDepth = 0.5f;
   float depthFocusRange = 0.12f;
+  float depthFalloff = 0.1f;
+  float subjectProtection = 1.0f;
   float depthInfluence = 0.8f;
   float depthDefocusPixels = 18.0f;
   float depthBloomBoost = 0.65f;

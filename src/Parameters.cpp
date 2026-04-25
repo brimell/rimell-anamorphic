@@ -82,6 +82,10 @@ RenderParams readParams(OfxImageEffectHandle effect) {
   params.focusDepth = static_cast<float>(getDoubleParam(paramSet, "focusDepth", params.focusDepth));
   params.depthFocusRange =
       static_cast<float>(getDoubleParam(paramSet, "depthFocusRange", params.depthFocusRange));
+  params.depthFalloff =
+      static_cast<float>(getDoubleParam(paramSet, "depthFalloff", params.depthFalloff));
+  params.subjectProtection =
+      static_cast<float>(getDoubleParam(paramSet, "subjectProtection", params.subjectProtection));
   params.depthInfluence =
       static_cast<float>(getDoubleParam(paramSet, "depthInfluence", params.depthInfluence));
   params.depthDefocusPixels =

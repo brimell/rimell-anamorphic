@@ -97,10 +97,12 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                   "Displays the connected depth clip as a grayscale output preview.");
   addBooleanParam(paramSet, "depthMapInvert", "Invert Depth Map", 0);
   addDoubleParam(paramSet, "focusDepth", "Focus Depth", 0.5, 0.0, 1.0, 0.0, 1.0);
-  addDoubleParam(paramSet, "depthFocusRange", "Depth Focus Range", 0.12, 0.0, 1.0, 0.0, 0.5);
+  addDoubleParam(paramSet, "depthFocusRange", "Focus Range", 0.12, 0.0, 1.0, 0.0, 0.5);
+  addDoubleParam(paramSet, "depthFalloff", "Depth Falloff", 0.1, 0.0, 1.0, 0.0, 0.5);
+  addDoubleParam(paramSet, "subjectProtection", "Subject Protection", 1.0, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "depthInfluence", "Depth Influence", 0.8, 0.0, 1.0, 0.0, 1.0);
-  addDoubleParam(paramSet, "depthDefocusPixels", "Depth Defocus Pixels", 18.0, 0.0, 160.0, 0.0, 60.0);
-  addDoubleParam(paramSet, "depthBloomBoost", "Depth Bloom Boost", 0.65, 0.0, 3.0, 0.0, 1.5);
+  addDoubleParam(paramSet, "depthDefocusPixels", "Depth Defocus", 18.0, 0.0, 160.0, 0.0, 60.0);
+  addDoubleParam(paramSet, "depthBloomBoost", "Depth Highlight Shape", 0.65, 0.0, 3.0, 0.0, 1.5);
   // Backward compatibility for older saved projects.
   addDoubleParam(paramSet, "halationExposureThreshold", "Legacy Halation Exposure Threshold", 0.5,
                  0.0, 1.0, 0.0, 1.0);
@@ -209,7 +211,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   }
 
   const char *depth[] = {"debugView", "depthMapEnabled", "previewDepthMap", "depthMapInvert", "focusDepth",
-                         "depthFocusRange", "depthInfluence", "depthDefocusPixels",
+                         "depthFocusRange", "depthFalloff", "subjectProtection", "depthInfluence",
+                         "depthDefocusPixels",
                          "depthBloomBoost"};
   for (const char *name : depth) {
     setParamParent(paramSet, name, "depthGroup");

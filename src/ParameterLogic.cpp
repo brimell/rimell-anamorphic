@@ -114,6 +114,8 @@ RenderParams clampRenderParams(RenderParams params) {
   params.depthMapInvert = params.depthMapInvert != 0 ? 1 : 0;
   params.focusDepth = clampValue(params.focusDepth, 0.0f, 1.0f);
   params.depthFocusRange = clampValue(params.depthFocusRange, 0.0f, 1.0f);
+  params.depthFalloff = clampValue(params.depthFalloff, 0.0f, 1.0f);
+  params.subjectProtection = clampValue(params.subjectProtection, 0.0f, 1.0f);
   params.depthInfluence = clampValue(params.depthInfluence, 0.0f, 1.0f);
   params.depthDefocusPixels = clampValue(params.depthDefocusPixels, 0.0f, 160.0f);
   params.depthBloomBoost = clampValue(params.depthBloomBoost, 0.0f, 3.0f);
