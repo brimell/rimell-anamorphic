@@ -55,16 +55,28 @@ struct RenderParams {
   float squeezeRatio = 1.33f;
   float horizontalFovBoost = 0.0f;
   float virtualFocalLength = 50.0f;
+  float breathingScale = 0.12f;
 
   float bokehStretch = 0.15f;
   float bokehRotation = 0.0f;
   float bokehEdgeFalloff = 0.15f;
+  float bokehStretchScale = 2.2f;
+  float bloomPixelScale = 80.0f;
+  float bloomThresholdScale = 0.75f;
+  int bloomRings = 2;
+  int bloomSamplesPerRing = 6;
+  float bloomEdgeKeepScale = 0.45f;
+  float bloomVeilScale = 0.4f;
+  float bloomCreamScale = 0.8f;
 
   float flareIntensity = 0.08f;
   float flareLength = 0.45f;
   Vec3 flareColour{0.35f, 0.75f, 1.0f};
   float flareThreshold = 0.82f;
   float flareAngle = 0.0f;
+  float flareStepDensity = 6.0f;
+  float flareSpanScale = 0.75f;
+  float flareFalloff = 3.0f;
 
   float veil = 0.03f;
   float bloomRadius = 0.12f;
@@ -74,28 +86,39 @@ struct RenderParams {
   int ghostCount = 0;
   float ghostSpread = 0.35f;
   Vec3 ghostTint{0.55f, 0.8f, 1.0f};
+  float ghostIntensity = 0.13f;
   int coatingStyle = 1;
+  float coatingWarmResponse = 0.75f;
+  float coatingCoolResponse = 1.25f;
 
   float edgeBlur = 0.05f;
   float tangentialSmear = 0.03f;
   float radialFalloff = 0.65f;
+  float edgeBlurPixels = 10.0f;
+  float fieldCurvaturePixels = 4.0f;
+  float smearPixels = 18.0f;
 
   float barrel = 0.0f;
   float mustache = 0.0f;
   float verticalCompensation = 0.0f;
+  float verticalCompensationScale = 0.35f;
 
   float closeFocusMumps = 0.0f;
   float faceWidthCompensation = 0.0f;
   float focusDistance = 0.5f;
   float breathingAmount = 0.0f;
+  float mumpsScale = 0.28f;
 
   float lateralCA = 0.03f;
   float longitudinalCA = 0.0f;
   float edgeOnlyCA = 1.0f;
+  float lateralCAPixelScale = 4.0f;
 
   float ovalVignette = 0.05f;
   float vignetteAsymmetry = 0.0f;
   float cornerBias = 0.0f;
+  float ovalVignetteScale = 1.8f;
+  float vignetteAsymmetryScale = 0.35f;
 
   float horizontalSmear = 0.03f;
   float verticalSharpness = 0.0f;
@@ -104,12 +127,19 @@ struct RenderParams {
   float catEyeStrength = 0.0f;
   float bokehVignette = 0.0f;
   float edgeCompression = 0.0f;
+  float catEyeDimScale = 0.22f;
+  float bokehVignetteDimScale = 0.18f;
+  float edgeCompressionScale = 0.16f;
+  float centerVeilScale = 0.08f;
 
   int guidesEnabled = 0;
   int outputAspect = 0;
+  float customOutputAspect = 2.39f;
   float safeArea = 0.9f;
   int letterboxPreview = 0;
   float letterboxOpacity = 0.55f;
+  float guideAspectStrength = 0.85f;
+  float guideSafeStrength = 0.45f;
 };
 
 float clamp01(float value) {
@@ -296,11 +326,25 @@ RenderParams readParams(OfxImageEffectHandle effect) {
       static_cast<float>(getDoubleParam(paramSet, "horizontalFovBoost", params.horizontalFovBoost));
   params.virtualFocalLength =
       static_cast<float>(getDoubleParam(paramSet, "virtualFocalLength", params.virtualFocalLength));
+  params.breathingScale = static_cast<float>(getDoubleParam(paramSet, "breathingScale", params.breathingScale));
 
   params.bokehStretch = static_cast<float>(getDoubleParam(paramSet, "bokehStretch", params.bokehStretch));
   params.bokehRotation = static_cast<float>(getDoubleParam(paramSet, "bokehRotation", params.bokehRotation));
   params.bokehEdgeFalloff =
       static_cast<float>(getDoubleParam(paramSet, "bokehEdgeFalloff", params.bokehEdgeFalloff));
+  params.bokehStretchScale =
+      static_cast<float>(getDoubleParam(paramSet, "bokehStretchScale", params.bokehStretchScale));
+  params.bloomPixelScale = static_cast<float>(getDoubleParam(paramSet, "bloomPixelScale", params.bloomPixelScale));
+  params.bloomThresholdScale =
+      static_cast<float>(getDoubleParam(paramSet, "bloomThresholdScale", params.bloomThresholdScale));
+  params.bloomRings = getIntParam(paramSet, "bloomRings", params.bloomRings);
+  params.bloomSamplesPerRing = getIntParam(paramSet, "bloomSamplesPerRing", params.bloomSamplesPerRing);
+  params.bloomEdgeKeepScale =
+      static_cast<float>(getDoubleParam(paramSet, "bloomEdgeKeepScale", params.bloomEdgeKeepScale));
+  params.bloomVeilScale =
+      static_cast<float>(getDoubleParam(paramSet, "bloomVeilScale", params.bloomVeilScale));
+  params.bloomCreamScale =
+      static_cast<float>(getDoubleParam(paramSet, "bloomCreamScale", params.bloomCreamScale));
 
   params.flareIntensity =
       static_cast<float>(getDoubleParam(paramSet, "flareIntensity", params.flareIntensity));
@@ -308,6 +352,11 @@ RenderParams readParams(OfxImageEffectHandle effect) {
   params.flareColour = getRGBParam(paramSet, "flareColour", params.flareColour);
   params.flareThreshold = static_cast<float>(getDoubleParam(paramSet, "flareThreshold", params.flareThreshold));
   params.flareAngle = static_cast<float>(getDoubleParam(paramSet, "flareAngle", params.flareAngle));
+  params.flareStepDensity =
+      static_cast<float>(getDoubleParam(paramSet, "flareStepDensity", params.flareStepDensity));
+  params.flareSpanScale =
+      static_cast<float>(getDoubleParam(paramSet, "flareSpanScale", params.flareSpanScale));
+  params.flareFalloff = static_cast<float>(getDoubleParam(paramSet, "flareFalloff", params.flareFalloff));
 
   params.veil = static_cast<float>(getDoubleParam(paramSet, "veil", params.veil));
   params.bloomRadius = static_cast<float>(getDoubleParam(paramSet, "bloomRadius", params.bloomRadius));
@@ -319,17 +368,28 @@ RenderParams readParams(OfxImageEffectHandle effect) {
   params.ghostCount = getIntParam(paramSet, "ghostCount", params.ghostCount);
   params.ghostSpread = static_cast<float>(getDoubleParam(paramSet, "ghostSpread", params.ghostSpread));
   params.ghostTint = getRGBParam(paramSet, "ghostTint", params.ghostTint);
+  params.ghostIntensity = static_cast<float>(getDoubleParam(paramSet, "ghostIntensity", params.ghostIntensity));
   params.coatingStyle = getIntParam(paramSet, "coatingStyle", params.coatingStyle);
+  params.coatingWarmResponse =
+      static_cast<float>(getDoubleParam(paramSet, "coatingWarmResponse", params.coatingWarmResponse));
+  params.coatingCoolResponse =
+      static_cast<float>(getDoubleParam(paramSet, "coatingCoolResponse", params.coatingCoolResponse));
 
   params.edgeBlur = static_cast<float>(getDoubleParam(paramSet, "edgeBlur", params.edgeBlur));
   params.tangentialSmear =
       static_cast<float>(getDoubleParam(paramSet, "tangentialSmear", params.tangentialSmear));
   params.radialFalloff = static_cast<float>(getDoubleParam(paramSet, "radialFalloff", params.radialFalloff));
+  params.edgeBlurPixels = static_cast<float>(getDoubleParam(paramSet, "edgeBlurPixels", params.edgeBlurPixels));
+  params.fieldCurvaturePixels =
+      static_cast<float>(getDoubleParam(paramSet, "fieldCurvaturePixels", params.fieldCurvaturePixels));
+  params.smearPixels = static_cast<float>(getDoubleParam(paramSet, "smearPixels", params.smearPixels));
 
   params.barrel = static_cast<float>(getDoubleParam(paramSet, "barrel", params.barrel));
   params.mustache = static_cast<float>(getDoubleParam(paramSet, "mustache", params.mustache));
   params.verticalCompensation =
       static_cast<float>(getDoubleParam(paramSet, "verticalCompensation", params.verticalCompensation));
+  params.verticalCompensationScale = static_cast<float>(
+      getDoubleParam(paramSet, "verticalCompensationScale", params.verticalCompensationScale));
 
   params.closeFocusMumps =
       static_cast<float>(getDoubleParam(paramSet, "closeFocusMumps", params.closeFocusMumps));
@@ -338,16 +398,23 @@ RenderParams readParams(OfxImageEffectHandle effect) {
   params.focusDistance = static_cast<float>(getDoubleParam(paramSet, "focusDistance", params.focusDistance));
   params.breathingAmount =
       static_cast<float>(getDoubleParam(paramSet, "breathingAmount", params.breathingAmount));
+  params.mumpsScale = static_cast<float>(getDoubleParam(paramSet, "mumpsScale", params.mumpsScale));
 
   params.lateralCA = static_cast<float>(getDoubleParam(paramSet, "lateralCA", params.lateralCA));
   params.longitudinalCA =
       static_cast<float>(getDoubleParam(paramSet, "longitudinalCA", params.longitudinalCA));
   params.edgeOnlyCA = static_cast<float>(getIntParam(paramSet, "edgeOnlyCA", static_cast<int>(params.edgeOnlyCA)));
+  params.lateralCAPixelScale =
+      static_cast<float>(getDoubleParam(paramSet, "lateralCAPixelScale", params.lateralCAPixelScale));
 
   params.ovalVignette = static_cast<float>(getDoubleParam(paramSet, "ovalVignette", params.ovalVignette));
   params.vignetteAsymmetry =
       static_cast<float>(getDoubleParam(paramSet, "vignetteAsymmetry", params.vignetteAsymmetry));
   params.cornerBias = static_cast<float>(getDoubleParam(paramSet, "cornerBias", params.cornerBias));
+  params.ovalVignetteScale =
+      static_cast<float>(getDoubleParam(paramSet, "ovalVignetteScale", params.ovalVignetteScale));
+  params.vignetteAsymmetryScale =
+      static_cast<float>(getDoubleParam(paramSet, "vignetteAsymmetryScale", params.vignetteAsymmetryScale));
 
   params.horizontalSmear =
       static_cast<float>(getDoubleParam(paramSet, "horizontalSmear", params.horizontalSmear));
@@ -362,18 +429,31 @@ RenderParams readParams(OfxImageEffectHandle effect) {
       static_cast<float>(getDoubleParam(paramSet, "bokehVignette", params.bokehVignette));
   params.edgeCompression =
       static_cast<float>(getDoubleParam(paramSet, "edgeCompression", params.edgeCompression));
+  params.catEyeDimScale = static_cast<float>(getDoubleParam(paramSet, "catEyeDimScale", params.catEyeDimScale));
+  params.bokehVignetteDimScale =
+      static_cast<float>(getDoubleParam(paramSet, "bokehVignetteDimScale", params.bokehVignetteDimScale));
+  params.edgeCompressionScale =
+      static_cast<float>(getDoubleParam(paramSet, "edgeCompressionScale", params.edgeCompressionScale));
+  params.centerVeilScale =
+      static_cast<float>(getDoubleParam(paramSet, "centerVeilScale", params.centerVeilScale));
 
   params.guidesEnabled = getIntParam(paramSet, "guidesEnabled", params.guidesEnabled);
   params.outputAspect = getIntParam(paramSet, "outputAspect", params.outputAspect);
+  params.customOutputAspect =
+      static_cast<float>(getDoubleParam(paramSet, "customOutputAspect", params.customOutputAspect));
   params.safeArea = static_cast<float>(getDoubleParam(paramSet, "safeArea", params.safeArea));
   params.letterboxPreview = getIntParam(paramSet, "letterboxPreview", params.letterboxPreview);
   params.letterboxOpacity =
       static_cast<float>(getDoubleParam(paramSet, "letterboxOpacity", params.letterboxOpacity));
+  params.guideAspectStrength =
+      static_cast<float>(getDoubleParam(paramSet, "guideAspectStrength", params.guideAspectStrength));
+  params.guideSafeStrength =
+      static_cast<float>(getDoubleParam(paramSet, "guideSafeStrength", params.guideSafeStrength));
 
   return params;
 }
 
-float aspectValue(int index) {
+float aspectValue(int index, float customOutputAspect) {
   switch (index) {
   case 0:
     return 2.0f;
@@ -381,6 +461,8 @@ float aspectValue(int index) {
     return 2.39f;
   case 2:
     return 2.66f;
+  case 3:
+    return std::max(0.1f, customOutputAspect);
   default:
     return 2.39f;
   }
@@ -474,13 +556,13 @@ Pixel warpedSourceSample(const Image &source, float dstX, float dstY, int width,
   const float radius2 = nx * nx + ny * ny;
   const float radius = std::sqrt(radius2);
 
-  const float breathe = 1.0f + params.breathingAmount * (0.5f - params.focusDistance) * 0.12f;
+  const float breathe = 1.0f + params.breathingAmount * (0.5f - params.focusDistance) * params.breathingScale;
   nx /= std::max(0.01f, breathe);
   ny /= std::max(0.01f, breathe);
 
   const float distortion = 1.0f + params.barrel * radius2 + params.mustache * radius2 * radius2;
   nx *= distortion;
-  ny *= distortion * (1.0f - params.verticalCompensation * radius2 * 0.35f);
+  ny *= distortion * (1.0f - params.verticalCompensation * radius2 * params.verticalCompensationScale);
 
   const float ratio = std::max(0.1f, params.squeezeRatio);
   if (params.squeezeMode == 1) {
@@ -495,9 +577,9 @@ Pixel warpedSourceSample(const Image &source, float dstX, float dstY, int width,
   const float centerWeight = smoothstep(0.9f, 0.0f, radius);
   const float mumps = (params.closeFocusMumps - params.faceWidthCompensation) * centerWeight *
                       smoothstep(1.0f, 0.0f, params.focusDistance);
-  nx /= std::max(0.1f, 1.0f + mumps * 0.28f);
+  nx /= std::max(0.1f, 1.0f + mumps * params.mumpsScale);
 
-  nx *= 1.0f + params.edgeCompression * radius2 * 0.16f;
+  nx *= 1.0f + params.edgeCompression * radius2 * params.edgeCompressionScale;
 
   const float ca = caOffset * radius * (params.edgeOnlyCA > 0.5f ? smoothstep(0.2f, 1.0f, radius) : 1.0f);
   const float sx = cx + (nx + ca) * halfW;
@@ -510,7 +592,7 @@ template <typename T>
 Pixel opticalBaseSample(const Image &source, float x, float y, int width, int height,
                         const RenderParams &params) {
   const float halfW = std::max(1.0f, static_cast<float>(width) * 0.5f);
-  const float caPixels = params.lateralCA * 4.0f;
+  const float caPixels = params.lateralCA * params.lateralCAPixelScale;
   const float caNormalised = caPixels / halfW;
   Pixel base = warpedSourceSample<T>(source, x, y, width, height, params, 0.0f);
   Pixel red = warpedSourceSample<T>(source, x, y, width, height, params, caNormalised);
@@ -533,7 +615,8 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
 
   Pixel result = base;
 
-  const float blurRadius = params.edgeBlur * edge * 10.0f + params.fieldCurvature * edge * 4.0f;
+  const float blurRadius =
+      params.edgeBlur * edge * params.edgeBlurPixels + params.fieldCurvature * edge * params.fieldCurvaturePixels;
   if (blurRadius > 0.05f) {
     Pixel blur{};
     float weight = 0.0f;
@@ -555,7 +638,7 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
     result = lerpPixel(result, blur, clamp01(edge * (params.edgeBlur + params.fieldCurvature)));
   }
 
-  const float smearRadius = edge * (params.tangentialSmear + params.horizontalSmear) * 18.0f;
+  const float smearRadius = edge * (params.tangentialSmear + params.horizontalSmear) * params.smearPixels;
   if (smearRadius > 0.05f) {
     Pixel smear{};
     float weight = 0.0f;
@@ -602,8 +685,8 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
   const float flareAngle = params.flareAngle * kPi / 180.0f;
   const float dirX = std::cos(flareAngle);
   const float dirY = std::sin(flareAngle);
-  const int flareSteps = std::max(2, static_cast<int>(2 + params.flareLength * 6.0f));
-  const float flareSpan = params.flareLength * static_cast<float>(width) * 0.75f;
+  const int flareSteps = std::max(2, static_cast<int>(2.0f + params.flareLength * params.flareStepDensity));
+  const float flareSpan = params.flareLength * static_cast<float>(width) * params.flareSpanScale;
   if (params.flareIntensity > 0.001f && flareSpan > 1.0f) {
     for (int i = -flareSteps; i <= flareSteps; ++i) {
       if (i == 0) {
@@ -613,21 +696,21 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float sx = x + dirX * t * flareSpan;
       const float sy = y + dirY * t * flareSpan;
       const float h = highlightAt<T>(source, sx, sy, params.flareThreshold);
-      const float w = std::exp(-std::abs(t) * 3.0f) * h * params.flareIntensity;
+      const float w = std::exp(-std::abs(t) * params.flareFalloff) * h * params.flareIntensity;
       add.r += params.flareColour.r * w;
       add.g += params.flareColour.g * w;
       add.b += params.flareColour.b * w;
     }
   }
 
-  const float bloomPixels = params.bloomRadius * 80.0f;
+  const float bloomPixels = params.bloomRadius * params.bloomPixelScale;
   if ((params.veil > 0.001f || params.highlightCream > 0.001f) && bloomPixels > 0.5f) {
     const float rotation = params.bokehRotation * kPi / 180.0f;
     const float cosR = std::cos(rotation);
     const float sinR = std::sin(rotation);
-    const float stretch = 1.0f + params.bokehStretch * 2.2f;
-    const int rings = 2;
-    const int samplesPerRing = 6;
+    const float stretch = 1.0f + params.bokehStretch * params.bokehStretchScale;
+    const int rings = std::max(1, params.bloomRings);
+    const int samplesPerRing = std::max(3, params.bloomSamplesPerRing);
     float total = 0.0f;
     Pixel bloom{};
     for (int ring = 1; ring <= rings; ++ring) {
@@ -639,7 +722,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
         const float rx = ox * cosR - oy * sinR;
         const float ry = ox * sinR + oy * cosR;
         const Pixel sample = sampleBilinear<T>(source, x + rx, y + ry);
-        const float h = smoothstep(params.flareThreshold * 0.75f, 1.0f, luminance(sample));
+        const float h = smoothstep(params.flareThreshold * params.bloomThresholdScale, 1.0f, luminance(sample));
         const float w = h / static_cast<float>(ring);
         bloom.r += sample.r * w;
         bloom.g += sample.g * w;
@@ -656,9 +739,11 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float nx = (x - cx) / std::max(1.0f, width * 0.5f);
       const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
       const float edge = smoothstep(0.35f, 1.1f, std::sqrt(nx * nx + ny * ny));
-      const float bokehEdgeKeep = 1.0f - edge * params.bokehEdgeFalloff * 0.45f;
+      const float bokehEdgeKeep = 1.0f - edge * params.bokehEdgeFalloff * params.bloomEdgeKeepScale;
       const float protect = lerp(1.0f, clamp01(luminance(base) * 2.0f), params.blackLiftProtection);
-      const float amount = (params.veil * 0.4f + params.highlightCream * 0.8f) * protect * bokehEdgeKeep;
+      const float amount =
+          (params.veil * params.bloomVeilScale + params.highlightCream * params.bloomCreamScale) * protect *
+          bokehEdgeKeep;
       add.r += bloom.r * amount;
       add.g += bloom.g * amount;
       add.b += bloom.b * amount;
@@ -668,14 +753,16 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
   if (params.ghostCount > 0 && params.ghostSpread > 0.001f) {
     const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
     const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
-    const float tintShift = params.coatingStyle == 0 ? 0.75f : (params.coatingStyle == 2 ? 1.25f : 1.0f);
+    const float tintShift = params.coatingStyle == 0
+                                ? params.coatingWarmResponse
+                                : (params.coatingStyle == 2 ? params.coatingCoolResponse : 1.0f);
     for (int i = 1; i <= params.ghostCount; ++i) {
       const float scale = 1.0f + params.ghostSpread * static_cast<float>(i);
       const float sx = cx - (x - cx) * scale;
       const float sy = cy - (y - cy) * scale;
       const Pixel ghost = sampleBilinear<T>(source, sx, sy);
       const float h = smoothstep(params.flareThreshold, 1.0f, luminance(ghost));
-      const float w = h * (0.13f / static_cast<float>(i)) * tintShift;
+      const float w = h * (params.ghostIntensity / static_cast<float>(i)) * tintShift;
       add.r += ghost.r * params.ghostTint.r * w;
       add.g += ghost.g * params.ghostTint.g * w;
       add.b += ghost.b * params.ghostTint.b * w;
@@ -683,9 +770,9 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
   }
 
   const float centerGlow = smoothstep(params.flareThreshold * 0.9f, 1.0f, luminance(base));
-  add.r += params.veil * centerGlow * 0.08f;
-  add.g += params.veil * centerGlow * 0.08f;
-  add.b += params.veil * centerGlow * 0.08f;
+  add.r += params.veil * centerGlow * params.centerVeilScale;
+  add.g += params.veil * centerGlow * params.centerVeilScale;
+  add.b += params.veil * centerGlow * params.centerVeilScale;
 
   return add;
 }
@@ -696,8 +783,9 @@ Pixel applyVignetteAndGuides(Pixel color, float x, float y, int width, int heigh
   const float nx = (x - cx) / std::max(1.0f, width * 0.5f);
   const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
 
-  const float ovalY = ny * (1.0f + params.ovalVignette * 1.8f);
-  const float asym = nx * params.vignetteAsymmetry * 0.35f + ny * params.cornerBias * 0.35f;
+  const float ovalY = ny * (1.0f + params.ovalVignette * params.ovalVignetteScale);
+  const float asym = nx * params.vignetteAsymmetry * params.vignetteAsymmetryScale +
+                     ny * params.cornerBias * params.vignetteAsymmetryScale;
   const float vignetteRadius = std::sqrt(nx * nx + ovalY * ovalY) + asym;
   const float vignette = 1.0f - params.ovalVignette * smoothstep(0.35f, 1.2f, vignetteRadius);
   color.r *= vignette;
@@ -705,13 +793,15 @@ Pixel applyVignetteAndGuides(Pixel color, float x, float y, int width, int heigh
   color.b *= vignette;
 
   const float edge = smoothstep(0.55f, 1.08f, std::sqrt(nx * nx + ny * ny));
-  const float catEye = 1.0f - params.catEyeStrength * edge * 0.22f - params.bokehVignette * edge * 0.18f;
+  const float catEye =
+      1.0f - params.catEyeStrength * edge * params.catEyeDimScale -
+      params.bokehVignette * edge * params.bokehVignetteDimScale;
   color.r *= catEye;
   color.g *= catEye;
   color.b *= catEye;
 
   if (params.guidesEnabled || params.letterboxPreview) {
-    const float target = aspectValue(params.outputAspect);
+    const float target = aspectValue(params.outputAspect, params.customOutputAspect);
     const float current = static_cast<float>(width) / std::max(1.0f, static_cast<float>(height));
     float contentX1 = 0.0f;
     float contentY1 = 0.0f;
@@ -748,7 +838,7 @@ Pixel applyVignetteAndGuides(Pixel color, float x, float y, int width, int heigh
       const bool safeLine = std::abs(x - sx1) < 1.0f || std::abs(x - sx2) < 1.0f ||
                             std::abs(y - sy1) < 1.0f || std::abs(y - sy2) < 1.0f;
       if (aspectLine || safeLine) {
-        const float strength = aspectLine ? 0.85f : 0.45f;
+        const float strength = aspectLine ? params.guideAspectStrength : params.guideSafeStrength;
         color.r = lerp(color.r, 1.0f, strength);
         color.g = lerp(color.g, safeLine ? 0.85f : 0.65f, strength);
         color.b = lerp(color.b, 0.25f, strength);
@@ -935,16 +1025,28 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
   addDoubleParam(paramSet, "horizontalFovBoost", "Horizontal FOV Boost", 0.0, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "virtualFocalLength", "Virtual Focal Length", 50.0, 10.0, 200.0, 18.0, 100.0);
+  addDoubleParam(paramSet, "breathingScale", "Breathing Scale", 0.12, 0.0, 1.0, 0.0, 0.35);
 
   addDoubleParam(paramSet, "bokehStretch", "Anamorphic Bloom Shape", 0.15, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "bokehRotation", "Bloom Shape Rotation", 0.0, -45.0, 45.0, -15.0, 15.0);
   addDoubleParam(paramSet, "bokehEdgeFalloff", "Bloom Edge Falloff", 0.15, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "bokehStretchScale", "Bloom Stretch Scale", 2.2, 0.0, 8.0, 0.0, 4.0);
+  addDoubleParam(paramSet, "bloomPixelScale", "Bloom Pixel Scale", 80.0, 0.0, 300.0, 0.0, 160.0);
+  addDoubleParam(paramSet, "bloomThresholdScale", "Bloom Threshold Scale", 0.75, 0.0, 2.0, 0.0, 1.2);
+  addIntParam(paramSet, "bloomRings", "Bloom Rings", 2, 1, 8);
+  addIntParam(paramSet, "bloomSamplesPerRing", "Bloom Samples Per Ring", 6, 3, 32);
+  addDoubleParam(paramSet, "bloomEdgeKeepScale", "Bloom Edge Keep Scale", 0.45, 0.0, 2.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "bloomVeilScale", "Bloom Veil Scale", 0.4, 0.0, 4.0, 0.0, 1.5);
+  addDoubleParam(paramSet, "bloomCreamScale", "Bloom Cream Scale", 0.8, 0.0, 4.0, 0.0, 2.0);
 
   addDoubleParam(paramSet, "flareIntensity", "Flare Intensity", 0.08, 0.0, 4.0, 0.0, 1.5);
   addDoubleParam(paramSet, "flareLength", "Flare Length", 0.45, 0.0, 1.0, 0.0, 1.0);
   addRGBParam(paramSet, "flareColour", "Flare Colour", {0.35f, 0.75f, 1.0f});
   addDoubleParam(paramSet, "flareThreshold", "Flare Threshold", 0.82, 0.0, 1.0, 0.4, 1.0);
   addDoubleParam(paramSet, "flareAngle", "Flare Angle", 0.0, -45.0, 45.0, -15.0, 15.0);
+  addDoubleParam(paramSet, "flareStepDensity", "Flare Step Density", 6.0, 0.0, 32.0, 0.0, 16.0);
+  addDoubleParam(paramSet, "flareSpanScale", "Flare Span Scale", 0.75, 0.0, 3.0, 0.0, 1.5);
+  addDoubleParam(paramSet, "flareFalloff", "Flare Falloff", 3.0, 0.0, 12.0, 0.0, 6.0);
 
   addDoubleParam(paramSet, "veil", "Veil", 0.03, 0.0, 1.0, 0.0, 0.5);
   addDoubleParam(paramSet, "bloomRadius", "Bloom Radius", 0.12, 0.0, 1.0, 0.0, 0.7);
@@ -954,30 +1056,41 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addIntParam(paramSet, "ghostCount", "Ghost Count", 0, 0, 8);
   addDoubleParam(paramSet, "ghostSpread", "Ghost Spread", 0.35, 0.0, 1.0, 0.0, 1.0);
   addRGBParam(paramSet, "ghostTint", "Ghost Tint", {0.55f, 0.8f, 1.0f});
+  addDoubleParam(paramSet, "ghostIntensity", "Ghost Intensity", 0.13, 0.0, 2.0, 0.0, 0.5);
   addChoiceParam(paramSet, "coatingStyle", "Coating Style", 1, "Warm", "Neutral", "Cool");
+  addDoubleParam(paramSet, "coatingWarmResponse", "Warm Coating Response", 0.75, 0.0, 3.0, 0.0, 1.5);
+  addDoubleParam(paramSet, "coatingCoolResponse", "Cool Coating Response", 1.25, 0.0, 3.0, 0.0, 1.5);
 
   addDoubleParam(paramSet, "edgeBlur", "Edge Blur", 0.05, 0.0, 1.0, 0.0, 0.7);
   addDoubleParam(paramSet, "tangentialSmear", "Tangential Smear", 0.03, 0.0, 1.0, 0.0, 0.8);
   addDoubleParam(paramSet, "radialFalloff", "Radial Falloff", 0.65, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "edgeBlurPixels", "Edge Blur Pixels", 10.0, 0.0, 80.0, 0.0, 30.0);
+  addDoubleParam(paramSet, "fieldCurvaturePixels", "Field Curvature Pixels", 4.0, 0.0, 80.0, 0.0, 30.0);
+  addDoubleParam(paramSet, "smearPixels", "Smear Pixels", 18.0, 0.0, 160.0, 0.0, 60.0);
 
   addDoubleParam(paramSet, "barrel", "Barrel", 0.0, -0.5, 0.5, -0.2, 0.2);
   addDoubleParam(paramSet, "mustache", "Mustache", 0.0, -0.5, 0.5, -0.2, 0.2);
   addDoubleParam(paramSet, "verticalCompensation", "Vertical Compensation", 0.0, -1.0, 1.0, -0.5, 0.5);
+  addDoubleParam(paramSet, "verticalCompensationScale", "Vertical Compensation Scale", 0.35, 0.0, 3.0, 0.0, 1.0);
 
   addDoubleParam(paramSet, "closeFocusMumps", "Close Focus Mumps", 0.0, 0.0, 1.0, 0.0, 0.6);
   addDoubleParam(paramSet, "faceWidthCompensation", "Face Width Compensation", 0.0, 0.0, 1.0, 0.0, 0.6);
   addDoubleParam(paramSet, "focusDistance", "Focus Distance", 0.5, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "breathingAmount", "Breathing Amount", 0.0, -1.0, 1.0, -0.5, 0.5);
+  addDoubleParam(paramSet, "mumpsScale", "Mumps Scale", 0.28, 0.0, 3.0, 0.0, 1.0);
 
   addDoubleParam(paramSet, "lateralCA", "Lateral CA", 0.03, 0.0, 1.0, 0.0, 0.6,
                  "1.0 is approximately four pixels of edge separation.");
   addDoubleParam(paramSet, "longitudinalCA", "Longitudinal CA", 0.0, 0.0, 1.0, 0.0, 0.3,
                  "Reserved for a future warped-coordinate implementation.");
   addBooleanParam(paramSet, "edgeOnlyCA", "Edge Only CA", 1);
+  addDoubleParam(paramSet, "lateralCAPixelScale", "Lateral CA Pixel Scale", 4.0, 0.0, 32.0, 0.0, 12.0);
 
   addDoubleParam(paramSet, "ovalVignette", "Oval Vignette", 0.05, 0.0, 1.0, 0.0, 0.8);
   addDoubleParam(paramSet, "vignetteAsymmetry", "Asymmetry", 0.0, -1.0, 1.0, -0.5, 0.5);
   addDoubleParam(paramSet, "cornerBias", "Corner Bias", 0.0, -1.0, 1.0, -0.5, 0.5);
+  addDoubleParam(paramSet, "ovalVignetteScale", "Oval Vignette Scale", 1.8, 0.0, 8.0, 0.0, 4.0);
+  addDoubleParam(paramSet, "vignetteAsymmetryScale", "Vignette Asymmetry Scale", 0.35, 0.0, 3.0, 0.0, 1.0);
 
   addDoubleParam(paramSet, "horizontalSmear", "Horizontal Smear", 0.03, 0.0, 1.0, 0.0, 0.7);
   addDoubleParam(paramSet, "verticalSharpness", "Vertical Sharpness", 0.0, 0.0, 1.0, 0.0, 0.5);
@@ -986,12 +1099,19 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "catEyeStrength", "Edge Highlight Vignette", 0.0, 0.0, 1.0, 0.0, 0.8);
   addDoubleParam(paramSet, "bokehVignette", "Bloom Vignette", 0.0, 0.0, 1.0, 0.0, 0.8);
   addDoubleParam(paramSet, "edgeCompression", "Edge Compression", 0.0, 0.0, 1.0, 0.0, 0.7);
+  addDoubleParam(paramSet, "catEyeDimScale", "Cat Eye Dim Scale", 0.22, 0.0, 3.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "bokehVignetteDimScale", "Bloom Vignette Dim Scale", 0.18, 0.0, 3.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "edgeCompressionScale", "Edge Compression Scale", 0.16, 0.0, 3.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "centerVeilScale", "Center Veil Scale", 0.08, 0.0, 2.0, 0.0, 0.5);
 
   addBooleanParam(paramSet, "guidesEnabled", "Aspect Guides", 0);
-  addChoiceParam(paramSet, "outputAspect", "Output Aspect", 1, "2.00:1", "2.39:1", "2.66:1");
+  addChoiceParam(paramSet, "outputAspect", "Output Aspect", 1, "2.00:1", "2.39:1", "2.66:1", "Custom");
+  addDoubleParam(paramSet, "customOutputAspect", "Custom Output Aspect", 2.39, 0.1, 8.0, 1.0, 4.0);
   addDoubleParam(paramSet, "safeArea", "Safe Area", 0.9, 0.5, 1.0, 0.8, 1.0);
   addBooleanParam(paramSet, "letterboxPreview", "Letterbox Preview", 0);
   addDoubleParam(paramSet, "letterboxOpacity", "Letterbox Opacity", 0.55, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "guideAspectStrength", "Aspect Guide Strength", 0.85, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "guideSafeStrength", "Safe Guide Strength", 0.45, 0.0, 1.0, 0.0, 1.0);
 
   return kOfxStatOK;
 }
