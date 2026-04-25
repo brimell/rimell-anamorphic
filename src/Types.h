@@ -30,6 +30,7 @@ struct Vec2 {
 
 struct RenderParams {
   float mix = 1.0f;
+  int debugView = 0;
   int renderQuality = 1;
   int lookPreset = 0;
   int inputMode = 0;

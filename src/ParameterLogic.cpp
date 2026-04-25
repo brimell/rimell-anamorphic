@@ -101,6 +101,7 @@ void applyGeometryOnly(RenderParams &params) {
 
 RenderParams clampRenderParams(RenderParams params) {
   params.mix = clampValue(params.mix, 0.0f, 1.0f);
+  params.debugView = clampValue(params.debugView, 0, 5);
   params.renderQuality = clampValue(params.renderQuality, 0, 2);
   params.lookPreset = clampValue(params.lookPreset, static_cast<int>(kLookPresetManual),
                                  static_cast<int>(kLookPresetGeometryOnly));
