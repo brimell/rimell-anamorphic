@@ -10,7 +10,7 @@ The plugin is intended for editors, colourists, and filmmakers who want the feel
 
 ---
 
-## What Cylindra does
+## What Rimell Anamorphic does
 
 Rimell Anamorphic simulates several families of anamorphic lens behaviour:
 
@@ -18,7 +18,7 @@ Rimell Anamorphic simulates several families of anamorphic lens behaviour:
 
 Anamorphic lenses compress the horizontal field of view during capture and are later desqueezed into a wider image. Rimell Anamorphic includes tools for working with this behaviour creatively or technically.
 
-Planned controls:
+Implemented controls:
 
 * Squeeze / desqueeze ratio: 1.25x, 1.33x, 1.5x, 1.8x, 2x
 * Output aspect preview: 2.00:1, 2.39:1, 2.66:1, custom
@@ -36,7 +36,7 @@ This module is the foundation of the plugin. Without geometry controls, an “an
 
 A lot of anamorphic character comes from how the image behaves away from the centre of the frame. Rimell Anamorphic aims to emulate this through directional blur, edge softness, and asymmetric optical fall-off.
 
-Planned controls:
+Implemented controls:
 
 * Edge softness
 * Horizontal smear
@@ -54,7 +54,7 @@ The goal is to make the frame feel optically shaped rather than uniformly sharpe
 
 One of the most recognisable anamorphic traits is oval out-of-focus highlights. In real lenses, this is tied to the cylindrical optical design and the squeeze/desqueeze process.
 
-Planned controls:
+Implemented controls:
 
 * Oval highlight stretch
 * Highlight bloom verticality
@@ -72,7 +72,7 @@ This is one of the hardest parts to emulate properly in post. Without depth info
 
 Rimell Anamorphic includes flare tools, but they are treated as one part of the anamorphic look rather than the whole point of the plugin.
 
-Planned controls:
+Implemented controls:
 
 * Horizontal streak flares
 * Flare length
@@ -93,7 +93,7 @@ The default look should be restrained. Overdone blue streaks tend to make footag
 
 Real lenses do not render every wavelength perfectly. Rimell Anamorphic adds optional colour separation and coating behaviour to support a more optical image.
 
-Planned controls:
+Implemented controls:
 
 * Lateral chromatic aberration
 * Edge-only chromatic separation
@@ -110,7 +110,7 @@ These effects should usually be subtle. The plugin is designed to add character,
 
 Some anamorphic behaviours are technically flaws, but can be visually useful. Rimell Anamorphic keeps these optional rather than building them into every preset.
 
-Planned controls:
+Implemented controls:
 
 * Anamorphic mumps / close-focus face widening
 * Focus breathing approximation
@@ -224,18 +224,19 @@ Presets should be starting points, not finished looks. The plugin should encoura
 
 ## Development goals
 
-The first usable version should focus on:
+The current release track focuses on:
 
 * Stable OFX integration
-* GPU-accelerated image processing where possible
 * Geometry and edge rendering
 * Subtle chromatic aberration
 * Basic streak flare generation
 * Sensible defaults
 * Resolve-friendly controls
+* CPU render performance and host compatibility
 
 Later versions can add:
 
+* GPU-accelerated image processing where possible
 * Depth-map input
 * Lens profile presets
 * Per-channel distortion
@@ -273,10 +274,12 @@ Rimell Anamorphic is an independent plugin concept and is not affiliated with AR
 
 ## Current implementation
 
-The repository now contains a C++ OpenFX image effect plugin implementation in `src/RimellAnamorphic.cpp`.
+The repository contains a CPU C++ OpenFX image effect plugin split across `src/Describe.cpp`,
+`src/Parameters.cpp`, `src/Render.cpp`, and `src/RimellAnamorphic.cpp`.
 
 Implemented controls include:
 
+* Mix and render quality: Draft, Preview, Final
 * Squeeze / desqueeze mode and ratio
 * Horizontal FOV boost and virtual focal length
 * Anamorphic bloom shape, rotation, and edge falloff
@@ -286,15 +289,21 @@ Implemented controls include:
 * Edge blur, tangential smear, radial falloff, horizontal smear, field curvature, and vertical sharpness
 * Barrel, mustache, vertical compensation, and edge compression
 * Close-focus mumps, face-width compensation, focus distance, and breathing
-* Lateral chromatic aberration; longitudinal CA is reserved for a future warped-coordinate implementation
+* Lateral chromatic aberration and focus-dependent longitudinal red/blue softness
 * Oval vignette, asymmetry, corner bias, edge highlight vignette, and bloom vignette
 * 2.00:1, 2.39:1, and 2.66:1 guides with optional baked letterbox preview
+* Basic OFX optimization/lifecycle actions: identity at zero mix, RoD, RoI, clip preferences,
+  create/destroy instance, sequence render brackets, and unload
+* Missing source frames render as transparent output when the host provides an output image
 
 Current v0.1 limitations:
 
 * Flare and bloom are deliberately cheap per-pixel approximations. A future higher-quality version should use lower-resolution highlight matte prepasses.
+* Render quality tiers scale sample counts, but the implementation is still a direct per-pixel CPU renderer.
 * Thresholds are display-referred control values. Scene-linear, log, HDR, and unclipped float media can need different threshold settings.
 * Aspect guides and letterbox preview are rendered into the image when enabled.
+* RGBA byte, short, and float clips are supported. RGB-only and alpha-only clips are currently rejected.
+* CI builds the plugin on macOS, Linux, and Windows, but there are not yet golden-frame image regression tests.
 
 ## Build
 
