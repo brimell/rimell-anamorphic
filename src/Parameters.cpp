@@ -55,6 +55,17 @@ RenderParams readParams(OfxImageEffectHandle effect) {
   params.anamorphicTransfer =
       static_cast<float>(getDoubleParam(paramSet, "anamorphicTransfer", params.anamorphicTransfer));
   params.lensIdentity = getIntParam(paramSet, "lensIdentity", params.lensIdentity);
+  params.depthMapEnabled = getIntParam(paramSet, "depthMapEnabled", params.depthMapEnabled);
+  params.depthMapInvert = getIntParam(paramSet, "depthMapInvert", params.depthMapInvert);
+  params.focusDepth = static_cast<float>(getDoubleParam(paramSet, "focusDepth", params.focusDepth));
+  params.depthFocusRange =
+      static_cast<float>(getDoubleParam(paramSet, "depthFocusRange", params.depthFocusRange));
+  params.depthInfluence =
+      static_cast<float>(getDoubleParam(paramSet, "depthInfluence", params.depthInfluence));
+  params.depthDefocusPixels =
+      static_cast<float>(getDoubleParam(paramSet, "depthDefocusPixels", params.depthDefocusPixels));
+  params.depthBloomBoost =
+      static_cast<float>(getDoubleParam(paramSet, "depthBloomBoost", params.depthBloomBoost));
   params.squeezeRatio = static_cast<float>(getDoubleParam(paramSet, "squeezeRatio", params.squeezeRatio));
   params.axisWarp = static_cast<float>(getDoubleParam(paramSet, "axisWarp", params.axisWarp));
   params.centerProtection =

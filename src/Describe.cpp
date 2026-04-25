@@ -1,5 +1,6 @@
 #include "Describe.h"
 
+#include "Constants.h"
 #include "HostSuites.h"
 #include "ParameterDefinition.h"
 
@@ -40,14 +41,35 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   gEffectSuite->clipDefine(effect, kOfxImageEffectSimpleSourceClipName, &props);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
 
+  gEffectSuite->clipDefine(effect, kDepthClipName, &props);
+  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
+  gPropertySuite->propSetInt(props, kOfxImageClipPropOptional, 0, 1);
+
   OfxParamSetHandle paramSet = nullptr;
   gEffectSuite->getParamSet(effect, &paramSet);
 
   addGroupParam(paramSet, "coreGroup", "Core", 1);
+  addGroupParam(paramSet, "depthGroup", "Depth Map", 1);
   addGroupParam(paramSet, "geometryGroup", "Geometry", 1);
   addGroupParam(paramSet, "highlightGroup", "Highlights / Flares", 0);
   addGroupParam(paramSet, "edgeGroup", "Edge / CA", 0);
   addGroupParam(paramSet, "framingGroup", "Framing", 0);
+
+  addGroupParam(paramSet, "geometryModeGroup", "Mode + Lens", 1);
+  addGroupParam(paramSet, "geometryShapeGroup", "Shape + Distortion", 0);
+  addGroupParam(paramSet, "geometryFocusGroup", "Focus + Breathing", 0);
+
+  addGroupParam(paramSet, "highlightBloomGroup", "Bloom", 1);
+  addGroupParam(paramSet, "highlightFlareGroup", "Flares", 0);
+  addGroupParam(paramSet, "highlightGhostGroup", "Ghosting + Coating", 0);
+  addGroupParam(paramSet, "highlightToneGroup", "Tone + Veiling", 0);
+
+  addGroupParam(paramSet, "edgeBlurGroup", "Blur + Smear", 1);
+  addGroupParam(paramSet, "edgeCaGroup", "Chromatic Aberration", 0);
+  addGroupParam(paramSet, "edgeVignetteGroup", "Vignette + Cat Eye", 0);
+
+  addGroupParam(paramSet, "framingAspectGroup", "Aspect Guides", 1);
+  addGroupParam(paramSet, "framingLetterboxGroup", "Letterbox + Crop", 0);
 
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, "Draft", "Preview", "Final",
@@ -67,6 +89,14 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addChoiceParam(paramSet, "lensIdentity", "Lens Identity", 1, "Custom", "Modern 1.33x",
                  "Classic 2x", "Scope Soft Edge", nullptr,
                  "Preset identity used to drive geometry, highlight, flare, and ghost scaling.");
+  addBooleanParam(paramSet, "depthMapEnabled", "Use Depth Map", 1,
+                  "Connect DaVinci Resolve's AI Depth Map output to the Depth input to drive focus-aware bokeh, blur, flares, ghosts, and longitudinal CA.");
+  addBooleanParam(paramSet, "depthMapInvert", "Invert Depth Map", 0);
+  addDoubleParam(paramSet, "focusDepth", "Focus Depth", 0.5, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "depthFocusRange", "Depth Focus Range", 0.12, 0.0, 1.0, 0.0, 0.5);
+  addDoubleParam(paramSet, "depthInfluence", "Depth Influence", 0.8, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "depthDefocusPixels", "Depth Defocus Pixels", 18.0, 0.0, 160.0, 0.0, 60.0);
+  addDoubleParam(paramSet, "depthBloomBoost", "Depth Bloom Boost", 0.65, 0.0, 3.0, 0.0, 1.5);
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
   addDoubleParam(paramSet, "axisWarp", "Axis Warp", 0.0, 0.0, 1.0, 0.0, 1.0,
                  "Adds user-controlled horizontal/vertical separation on top of the selected lens identity.");
@@ -171,45 +201,105 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
     setParamParent(paramSet, name, "coreGroup");
   }
 
-  const char *geometry[] = {"inputMode", "squeezeMode", "anamorphicTransfer", "lensIdentity",
-                            "squeezeRatio", "axisWarp", "centerProtection", "edgeCompressionStart",
-                            "horizontalFovBoost", "virtualFocalLength", "breathingScale",
-                            "barrel", "mustache", "verticalCompensation", "verticalCompensationScale",
-                            "closeFocusMumps", "faceWidthCompensation", "focusDistance",
-                            "breathingAmount", "mumpsScale", "edgeCompression", "edgeCompressionScale"};
-  for (const char *name : geometry) {
+  const char *depth[] = {"depthMapEnabled", "depthMapInvert", "focusDepth", "depthFocusRange",
+                         "depthInfluence", "depthDefocusPixels", "depthBloomBoost"};
+  for (const char *name : depth) {
+    setParamParent(paramSet, name, "depthGroup");
+  }
+
+  const char *geometrySubGroups[] = {"geometryModeGroup", "geometryShapeGroup", "geometryFocusGroup"};
+  for (const char *name : geometrySubGroups) {
     setParamParent(paramSet, name, "geometryGroup");
   }
 
-  const char *highlights[] = {"bokehStretch", "bokehRotation", "bokehEdgeFalloff", "bokehStretchScale",
-                              "bloomPixelScale", "bloomThresholdScale", "bloomRings",
-                              "bloomSamplesPerRing", "bloomEdgeKeepScale", "bloomVeilScale",
-                              "bloomCreamScale", "flareIntensity", "flareLength", "flareColour",
-                              "flareThreshold", "flareAngle", "flareStepDensity", "flareSpanScale",
-                              "flareFalloff", "veil", "bloomRadius", "highlightCream",
-                              "blackLiftProtection", "ghostCount", "ghostSpread", "ghostTint",
-                              "ghostIntensity", "coatingStyle", "coatingWarmResponse",
-                              "coatingCoolResponse", "centerVeilScale"};
-  for (const char *name : highlights) {
+  const char *geometryMode[] = {"inputMode", "squeezeMode", "anamorphicTransfer",
+                                "lensIdentity", "squeezeRatio", "centerProtection", "edgeCompressionStart",
+                                "horizontalFovBoost"};
+  for (const char *name : geometryMode) {
+    setParamParent(paramSet, name, "geometryModeGroup");
+  }
+
+  const char *geometryShape[] = {"axisWarp", "barrel", "mustache", "verticalCompensation",
+                                 "verticalCompensationScale", "edgeCompression", "edgeCompressionScale"};
+  for (const char *name : geometryShape) {
+    setParamParent(paramSet, name, "geometryShapeGroup");
+  }
+
+  const char *geometryFocus[] = {"virtualFocalLength", "focusDistance", "breathingAmount",
+                                 "breathingScale", "closeFocusMumps", "faceWidthCompensation", "mumpsScale"};
+  for (const char *name : geometryFocus) {
+    setParamParent(paramSet, name, "geometryFocusGroup");
+  }
+
+  const char *highlightSubGroups[] = {"highlightBloomGroup", "highlightFlareGroup",
+                                      "highlightGhostGroup", "highlightToneGroup"};
+  for (const char *name : highlightSubGroups) {
     setParamParent(paramSet, name, "highlightGroup");
   }
 
-  const char *edge[] = {"edgeBlur", "tangentialSmear", "radialFalloff", "edgeBlurPixels",
-                        "fieldCurvaturePixels", "smearPixels", "lateralCA", "longitudinalCA",
-                        "edgeOnlyCA", "lateralCAPixelScale", "ovalVignette", "vignetteAsymmetry",
-                        "cornerBias", "ovalVignetteScale", "vignetteAsymmetryScale",
-                        "horizontalSmear", "verticalSharpness", "fieldCurvature",
-                        "catEyeStrength", "bokehVignette", "catEyeDimScale",
-                        "bokehVignetteDimScale"};
-  for (const char *name : edge) {
+  const char *highlightBloom[] = {"bloomRadius", "bokehStretch", "bokehRotation", "bokehEdgeFalloff",
+                                  "bokehStretchScale", "bloomPixelScale", "bloomThresholdScale",
+                                  "bloomRings", "bloomSamplesPerRing", "bloomEdgeKeepScale",
+                                  "bloomVeilScale", "bloomCreamScale"};
+  for (const char *name : highlightBloom) {
+    setParamParent(paramSet, name, "highlightBloomGroup");
+  }
+
+  const char *highlightFlare[] = {"flareIntensity", "flareLength", "flareColour", "flareThreshold",
+                                  "flareAngle", "flareStepDensity", "flareSpanScale", "flareFalloff"};
+  for (const char *name : highlightFlare) {
+    setParamParent(paramSet, name, "highlightFlareGroup");
+  }
+
+  const char *highlightGhost[] = {"ghostCount", "ghostSpread", "ghostTint", "ghostIntensity",
+                                  "coatingStyle", "coatingWarmResponse", "coatingCoolResponse"};
+  for (const char *name : highlightGhost) {
+    setParamParent(paramSet, name, "highlightGhostGroup");
+  }
+
+  const char *highlightTone[] = {"veil", "highlightCream", "blackLiftProtection", "centerVeilScale"};
+  for (const char *name : highlightTone) {
+    setParamParent(paramSet, name, "highlightToneGroup");
+  }
+
+  const char *edgeSubGroups[] = {"edgeBlurGroup", "edgeCaGroup", "edgeVignetteGroup"};
+  for (const char *name : edgeSubGroups) {
     setParamParent(paramSet, name, "edgeGroup");
   }
 
-  const char *framing[] = {"guidesEnabled", "outputAspect", "customOutputAspect", "safeArea",
-                           "letterboxPreview", "letterboxOpacity", "guideAspectStrength",
-                           "guideSafeStrength", "autoEdgeCrop"};
-  for (const char *name : framing) {
+  const char *edgeBlur[] = {"edgeBlur", "edgeBlurPixels", "tangentialSmear", "smearPixels",
+                            "horizontalSmear", "verticalSharpness", "radialFalloff", "fieldCurvature",
+                            "fieldCurvaturePixels"};
+  for (const char *name : edgeBlur) {
+    setParamParent(paramSet, name, "edgeBlurGroup");
+  }
+
+  const char *edgeCa[] = {"lateralCA", "lateralCAPixelScale", "longitudinalCA", "edgeOnlyCA"};
+  for (const char *name : edgeCa) {
+    setParamParent(paramSet, name, "edgeCaGroup");
+  }
+
+  const char *edgeVignette[] = {"ovalVignette", "ovalVignetteScale", "vignetteAsymmetry",
+                                "vignetteAsymmetryScale", "cornerBias", "catEyeStrength",
+                                "catEyeDimScale", "bokehVignette", "bokehVignetteDimScale"};
+  for (const char *name : edgeVignette) {
+    setParamParent(paramSet, name, "edgeVignetteGroup");
+  }
+
+  const char *framingSubGroups[] = {"framingAspectGroup", "framingLetterboxGroup"};
+  for (const char *name : framingSubGroups) {
     setParamParent(paramSet, name, "framingGroup");
+  }
+
+  const char *framingAspect[] = {"guidesEnabled", "outputAspect", "customOutputAspect",
+                                 "safeArea", "guideAspectStrength", "guideSafeStrength"};
+  for (const char *name : framingAspect) {
+    setParamParent(paramSet, name, "framingAspectGroup");
+  }
+
+  const char *framingLetterbox[] = {"letterboxPreview", "letterboxOpacity", "autoEdgeCrop"};
+  for (const char *name : framingLetterbox) {
+    setParamParent(paramSet, name, "framingLetterboxGroup");
   }
 
   return kOfxStatOK;

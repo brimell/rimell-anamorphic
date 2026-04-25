@@ -108,6 +108,13 @@ RenderParams clampRenderParams(RenderParams params) {
   params.squeezeMode = clampValue(params.squeezeMode, 0, 2);
   params.anamorphicTransfer = clampValue(params.anamorphicTransfer, 0.0f, 1.0f);
   params.lensIdentity = clampValue(params.lensIdentity, 0, 3);
+  params.depthMapEnabled = params.depthMapEnabled != 0 ? 1 : 0;
+  params.depthMapInvert = params.depthMapInvert != 0 ? 1 : 0;
+  params.focusDepth = clampValue(params.focusDepth, 0.0f, 1.0f);
+  params.depthFocusRange = clampValue(params.depthFocusRange, 0.0f, 1.0f);
+  params.depthInfluence = clampValue(params.depthInfluence, 0.0f, 1.0f);
+  params.depthDefocusPixels = clampValue(params.depthDefocusPixels, 0.0f, 160.0f);
+  params.depthBloomBoost = clampValue(params.depthBloomBoost, 0.0f, 3.0f);
   params.squeezeRatio = clampValue(params.squeezeRatio, 1.0f, 2.0f);
   params.axisWarp = clampValue(params.axisWarp, 0.0f, 1.0f);
   params.centerProtection = clampValue(params.centerProtection, 0.0f, 1.0f);
