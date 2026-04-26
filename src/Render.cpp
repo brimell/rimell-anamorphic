@@ -62,6 +62,56 @@ struct DepthSample {
   float defocusRadius = 0.0f;
 };
 
+struct MetalHostState {
+  bool hasMetalQueue = false;
+  bool sourceIsMetal = false;
+  bool outputIsMetal = false;
+  bool depthIsMetal = false;
+  void *queuePtr = nullptr;
+};
+
+MetalHostState inspectMetalState(OfxPropertySetHandle inArgs, OfxPropertySetHandle sourceImage,
+                                 OfxPropertySetHandle outputImage,
+                                 OfxPropertySetHandle depthImage) {
+  MetalHostState state{};
+
+#if defined(__APPLE__)
+  void *queue = nullptr;
+  if (gPropertySuite->propGetPointer(inArgs, kOfxImageEffectPropMetalCommandQueue, 0, &queue) ==
+          kOfxStatOK &&
+      queue) {
+    state.hasMetalQueue = true;
+    state.queuePtr = queue;
+  }
+
+  int metalEnabled = 0;
+  if (gPropertySuite->propGetInt(inArgs, kOfxImageEffectPropMetalEnabled, 0, &metalEnabled) !=
+      kOfxStatOK) {
+    metalEnabled = 0;
+  }
+
+  auto detectImageMetal = [metalEnabled](OfxPropertySetHandle image) {
+    if (!image) {
+      return false;
+    }
+
+    int imageMetalEnabled = 0;
+    if (gPropertySuite->propGetInt(image, kOfxImageEffectPropMetalEnabled, 0, &imageMetalEnabled) ==
+        kOfxStatOK) {
+      return imageMetalEnabled != 0;
+    }
+
+    return metalEnabled != 0;
+  };
+
+  state.sourceIsMetal = detectImageMetal(sourceImage);
+  state.outputIsMetal = detectImageMetal(outputImage);
+  state.depthIsMetal = detectImageMetal(depthImage);
+#endif
+
+  return state;
+}
+
 template <typename T>
 float sampleDepthAlphaBilinear(const Image &image, float x, float y, float scale) {
   if (!image.data || image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2 ||
@@ -1069,6 +1119,8 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
             const bool depthImageFetched = depthRequested &&
                                            fetchOptionalImage(depthClip, time, &depthImageHandle, &depth);
             bool hasDepth = depthImageFetched;
+            const MetalHostState metalState =
+              inspectMetalState(inArgs, sourceImageHandle, outputImageHandle, depthImageHandle);
             logPrintf(LogLevel::Debug,
                   "render",
                   "depth preflight requested=%d clipAvailable=%d clipConnected=%d fetched=%d handle=%p data=%p rowBytes=%d bounds=[%d,%d,%d,%d]",
@@ -1155,6 +1207,14 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                                                    params.debugView == static_cast<int>(DebugView::DepthFocusMask) ||
                                                    params.debugView == static_cast<int>(DebugView::DepthDefocusRadius));
               const bool useMetal = false;
+              logPrintf(LogLevel::Info,
+                        "render",
+                        "metalQueue=%d sourceMetal=%d outputMetal=%d depthMetal=%d backend=CPU queuePtr=%p",
+                        metalState.hasMetalQueue ? 1 : 0,
+                        metalState.sourceIsMetal ? 1 : 0,
+                        metalState.outputIsMetal ? 1 : 0,
+                        metalState.depthIsMetal ? 1 : 0,
+                        metalState.queuePtr);
               logPrintf(LogLevel::Info,
                         "render",
                         "render path source=%d depth=%d depthUsed=%d depthConnected=%d metal=%d outputBitDepth=%s",
