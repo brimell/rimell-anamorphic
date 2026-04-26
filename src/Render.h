@@ -5,8 +5,6 @@
 
 namespace rimell {
 
-OfxStatus createInstance(OfxImageEffectHandle instance);
-OfxStatus destroyInstance(OfxImageEffectHandle instance);
 OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs);
 OfxStatus isIdentity(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs,
                      OfxPropertySetHandle outArgs);

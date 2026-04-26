@@ -101,9 +101,7 @@ void applyGeometryOnly(RenderParams &params) {
 
 RenderParams clampRenderParams(RenderParams params) {
   params.mix = clampValue(params.mix, 0.0f, 1.0f);
-  params.debugView = clampValue(params.debugView, 0, 10);
-  params.processingBackend = clampValue(params.processingBackend, 0, 2);
-  params.metalSafety = clampValue(params.metalSafety, 0, 1);
+  params.debugView = clampValue(params.debugView, 0, 5);
   params.renderQuality = clampValue(params.renderQuality, 0, 2);
   params.lookPreset = clampValue(params.lookPreset, static_cast<int>(kLookPresetManual),
                                  static_cast<int>(kLookPresetGeometryOnly));
@@ -119,17 +117,14 @@ RenderParams clampRenderParams(RenderParams params) {
   params.depthFalloff = clampValue(params.depthFalloff, 0.0f, 1.0f);
   params.subjectProtection = clampValue(params.subjectProtection, 0.0f, 1.0f);
   params.depthInfluence = clampValue(params.depthInfluence, 0.0f, 1.0f);
-  params.depthDefocusPixels = clampValue(params.depthDefocusPixels, 0.0f, 64.0f);
+  params.depthDefocusPixels = clampValue(params.depthDefocusPixels, 0.0f, 160.0f);
   params.depthBloomBoost = clampValue(params.depthBloomBoost, 0.0f, 3.0f);
   params.squeezeRatio = clampValue(params.squeezeRatio, 1.0f, 2.0f);
   params.axisWarp = clampValue(params.axisWarp, 0.0f, 1.0f);
   params.centerProtection = clampValue(params.centerProtection, 0.0f, 1.0f);
   params.edgeCompressionStart = clampValue(params.edgeCompressionStart, 0.0f, 1.0f);
   params.bloomRings = clampValue(params.bloomRings, 1, 8);
-  params.bloomSamplesPerRing = clampValue(params.bloomSamplesPerRing, 3, 16);
-  params.flareIntensity = clampValue(params.flareIntensity, 0.0f, 4.0f);
-  params.flareLength = clampValue(params.flareLength, 0.0f, 1.0f);
-  params.flareStepDensity = clampValue(params.flareStepDensity, 0.0f, 16.0f);
+  params.bloomSamplesPerRing = clampValue(params.bloomSamplesPerRing, 3, 32);
   params.ghostCount = clampValue(params.ghostCount, 0, 8);
   params.coatingStyle = clampValue(params.coatingStyle, 0, 2);
   params.longitudinalCA = clampValue(params.longitudinalCA, 0.0f, 1.0f);

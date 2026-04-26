@@ -60,39 +60,6 @@ if(APPLE)
     "-framework Foundation"
     "-framework QuartzCore"
   )
-
-  execute_process(
-    COMMAND xcrun -sdk macosx metal -help
-    RESULT_VARIABLE RIMELL_METAL_TOOL_RESULT
-    OUTPUT_QUIET
-    ERROR_QUIET
-  )
-  if(RIMELL_METAL_TOOL_RESULT EQUAL 0)
-    set(RIMELL_METAL_AIR "${CMAKE_BINARY_DIR}/RimellKernels.air")
-    set(RIMELL_METAL_LIB "${CMAKE_BINARY_DIR}/RimellKernels.metallib")
-    add_custom_command(
-      OUTPUT "${RIMELL_METAL_LIB}"
-      COMMAND xcrun -sdk macosx metal
-              -c "${CMAKE_CURRENT_SOURCE_DIR}/src/RimellKernels.metal"
-              -o "${RIMELL_METAL_AIR}"
-      COMMAND xcrun -sdk macosx metallib
-              "${RIMELL_METAL_AIR}"
-              -o "${RIMELL_METAL_LIB}"
-      DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/RimellKernels.metal"
-      COMMENT "Compiling Rimell Metal kernels"
-      VERBATIM
-    )
-    add_custom_target(RimellKernelsMetallib DEPENDS "${RIMELL_METAL_LIB}")
-    add_dependencies(${OFX_PLUGIN_NAME} RimellKernelsMetallib)
-    add_custom_command(TARGET ${OFX_PLUGIN_NAME} POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E make_directory "${OFX_CONTENTS_DIR}/Resources"
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-              "${RIMELL_METAL_LIB}"
-              "${OFX_CONTENTS_DIR}/Resources/RimellKernels.metallib"
-    )
-  else()
-    message(WARNING "Metal Toolchain unavailable; RimellKernels.metallib will not be built in this workspace")
-  endif()
 endif()
 
 target_include_directories(${OFX_PLUGIN_NAME} PRIVATE

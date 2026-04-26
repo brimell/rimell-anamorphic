@@ -18,7 +18,7 @@ OfxStatus describe(OfxImageEffectHandle effect) {
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 0, kOfxBitDepthByte);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 1, kOfxBitDepthShort);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 2, kOfxBitDepthFloat);
-  gPropertySuite->propSetInt(props, kOfxImageEffectPropSupportsMultipleClipDepths, 0, 0);
+  gPropertySuite->propSetInt(props, kOfxImageEffectPropSupportsMultipleClipDepths, 0, 1);
   gPropertySuite->propSetInt(props, kOfxImageEffectPluginPropSingleInstance, 0, 0);
   gPropertySuite->propSetInt(props, kOfxImageEffectPluginPropHostFrameThreading, 0, 1);
   gPropertySuite->propSetString(props, kOfxImageEffectPluginRenderThreadSafety, 0,
@@ -26,11 +26,6 @@ OfxStatus describe(OfxImageEffectHandle effect) {
   gPropertySuite->propSetInt(props, kOfxImageEffectPropSupportsTiles, 0, 0);
   gPropertySuite->propSetInt(props, kOfxImageEffectPropTemporalClipAccess, 0, 0);
   gPropertySuite->propSetString(props, kOfxImageEffectPropCPURenderSupported, 0, "true");
-#ifdef __APPLE__
-  gPropertySuite->propSetString(props, kOfxImageEffectPropMetalRenderSupported, 0, "true");
-#else
-  gPropertySuite->propSetString(props, kOfxImageEffectPropMetalRenderSupported, 0, "false");
-#endif
   return kOfxStatOK;
 }
 
@@ -54,7 +49,6 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   gEffectSuite->getParamSet(effect, &paramSet);
 
   addGroupParam(paramSet, "coreGroup", "Core", 1);
-  addGroupParam(paramSet, "backendGroup", "Backend", 0);
   addGroupParam(paramSet, "depthGroup", "Depth Map", 1);
   addGroupParam(paramSet, "geometryGroup", "Geometry", 1);
   addGroupParam(paramSet, "highlightGroup", "Highlights / Flares", 0);
@@ -78,36 +72,24 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addGroupParam(paramSet, "framingLetterboxGroup", "Letterbox + Crop", 0);
 
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
-  addChoiceParam(paramSet, "debugView", "Debug View", 0, "Off", "Source", "UV / Coordinate Map",
-                 "Depth Raw", "Depth Focus Mask", "Defocus Radius",
-                 "Edge Mask", "Highlight Matte", "Flare Source",
-                 "Bloom Source", "Final Additives Only");
-  addChoiceParam(paramSet, "processingBackend", "Processing Backend", 0, "Auto", "CPU", "Metal",
-                 nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                 "Auto prefers Metal only when Resolve supplies compatible float RGBA Metal buffers.");
-  addChoiceParam(paramSet, "metalSafety", "Metal Safety", 0, "Strict", "Experimental",
-                 nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                 "Strict limits Metal to validated float RGBA buffers; Experimental keeps the same fallback behavior.");
+  addChoiceParam(paramSet, "debugView", "Debug View", 0, "Off", "Source", "Depth Raw",
+                 "Depth Normalised", "Depth Focus Mask", "Depth Defocus Radius");
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, "Draft", "Preview", "Final",
-                 nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                 "Scales expensive flare, bloom, blur, and chromatic sampling.");
+                 nullptr, nullptr, "Scales expensive flare, bloom, blur, and chromatic sampling.");
   addChoiceParam(paramSet, "lookPreset", "Look Preset", 0, "Manual", "Subtle Modern",
                  "Classic 2x", "Night Flare", "Geometry Only",
-                 nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
                  "Creative starting points. Manual leaves individual controls unchanged.");
 
   addChoiceParam(paramSet, "inputMode", "Input Mode", 0, "Spherical -> Anamorphic Look",
                  "Real Anamorphic Utility", "Creative Warp", nullptr,
-                 nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                 "Spherical mode emulates an anamorphic finish from normal circular-lens footage.");
+                 nullptr, "Spherical mode emulates an anamorphic finish from normal circular-lens footage.");
   addChoiceParam(paramSet, "squeezeMode", "Squeeze Mode", 0, "Off", "Squeeze", "Desqueeze",
-                 nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                 nullptr, nullptr,
                  "Utility geometry for real anamorphic plates or creative warps; ignored by the main spherical look mode.");
   addDoubleParam(paramSet, "anamorphicTransfer", "Anamorphic Transfer", 1.0, 0.0, 1.0, 0.0, 1.0,
                  "Blends from spherical source mapping to the synthetic anamorphic view map.");
   addChoiceParam(paramSet, "lensIdentity", "Lens Identity", 1, "Custom", "Modern 1.33x",
                  "Classic 2x", "Scope Soft Edge", nullptr,
-                 nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
                  "Preset identity used to drive geometry, highlight, flare, and ghost scaling.");
   addBooleanParam(paramSet, "depthMapEnabled", "Use Depth Map", 1,
                   "Connect DaVinci Resolve's AI Depth Map output to the Depth input to drive focus-aware bokeh, blur, flares, ghosts, and longitudinal CA.");
@@ -223,16 +205,9 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addBooleanParam(paramSet, "autoEdgeCrop", "Auto Edge Crop", 0,
                   "Crops in by the smallest amount needed to keep warped edge samples inside the source image.");
 
-  setParamParent(paramSet, "backendGroup", "coreGroup");
-
   const char *core[] = {"mix", "renderQuality", "lookPreset"};
   for (const char *name : core) {
     setParamParent(paramSet, name, "coreGroup");
-  }
-
-  const char *backend[] = {"processingBackend", "metalSafety"};
-  for (const char *name : backend) {
-    setParamParent(paramSet, name, "backendGroup");
   }
 
   const char *depth[] = {"debugView", "depthMapEnabled", "previewDepthMap", "depthMapInvert", "focusDepth",
