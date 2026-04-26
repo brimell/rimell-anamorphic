@@ -26,6 +26,9 @@ OfxStatus describe(OfxImageEffectHandle effect) {
   gPropertySuite->propSetInt(props, kOfxImageEffectPropSupportsTiles, 0, 0);
   gPropertySuite->propSetInt(props, kOfxImageEffectPropTemporalClipAccess, 0, 0);
   gPropertySuite->propSetString(props, kOfxImageEffectPropCPURenderSupported, 0, "true");
+#if defined(__APPLE__)
+  gPropertySuite->propSetInt(props, kOfxImageEffectPropMetalRenderSupported, 0, 1);
+#endif
   return kOfxStatOK;
 }
 
