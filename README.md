@@ -591,6 +591,10 @@ The plugin currently implements the following behaviour:
 * `Classic 2x`, a stronger vintage-scope starting point
 * `Night Flare`, biased toward bright-source streaks, bloom, and ghosts
 * `Geometry Only`, which disables additive optical effects and keeps the synthetic mapping path
+* `Soft Scope`, a softer 1.5x-style starting point with light edge behaviour
+* `Warm Glass`, which pushes amber flares, warmer ghosts, and a denser glow
+* `Vintage Wide`, a heavier vintage-scope look with more smear and ghosting
+* `Clean Prime`, which keeps the anamorphic shape but pulls back the optical artifacts
 
 These presets are exposed as starting points through the normal OFX parameter set. The individual controls remain public, so a host project can still keyframe or override the underlying look controls.
 

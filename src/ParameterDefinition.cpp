@@ -2,6 +2,8 @@
 
 #include "HostSuites.h"
 
+#include <initializer_list>
+
 namespace rimell {
 
 void addDoubleParam(OfxParamSetHandle paramSet, const char *name, const char *label, double defaultValue,
@@ -82,9 +84,8 @@ void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *lab
 }
 
 void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *label, int defaultValue,
-                    const char *option0, const char *option1, const char *option2,
-                    const char *option3, const char *option4, const char *hint) {
-  if (!paramSet || !name || !label || !option0 || !option1 || !gParameterSuite || !gPropertySuite) {
+                    std::initializer_list<const char *> options, const char *hint) {
+  if (!paramSet || !name || !label || options.size() < 2 || !gParameterSuite || !gPropertySuite) {
     return;
   }
 
@@ -95,16 +96,9 @@ void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *la
 
   gPropertySuite->propSetString(props, kOfxPropLabel, 0, label);
   gPropertySuite->propSetInt(props, kOfxParamPropDefault, 0, defaultValue);
-  gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 0, option0);
-  gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 1, option1);
-  if (option2) {
-    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 2, option2);
-  }
-  if (option3) {
-    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 3, option3);
-  }
-  if (option4) {
-    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, 4, option4);
+  int index = 0;
+  for (const char *option : options) {
+    gPropertySuite->propSetString(props, kOfxParamPropChoiceOption, index++, option);
   }
   if (hint) {
     gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);

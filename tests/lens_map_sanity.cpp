@@ -119,7 +119,7 @@ int main() {
   clamped.ghostCount = 99;
   clamped.coatingStyle = -4;
   clamped = rimell::clampRenderParams(clamped);
-  passed = require(clamped.renderQuality == 2 && clamped.lookPreset == rimell::kLookPresetGeometryOnly &&
+  passed = require(clamped.renderQuality == 2 && clamped.lookPreset == rimell::kLookPresetCleanPrime &&
                        clamped.bloomRings == 8 && clamped.bloomSamplesPerRing == 3 &&
                        clamped.ghostCount == 8 && clamped.coatingStyle == 0,
                    "parameter clamps did not hold expected bounds") &&
@@ -138,6 +138,22 @@ int main() {
   passed = require(near(geometryOnly.flareIntensity, 0.0f) && near(geometryOnly.lateralCA, 0.0f) &&
                        geometryOnly.ghostCount == 0,
                    "geometry-only preset left additive optical effects enabled") &&
+           passed;
+
+  rimell::RenderParams warmGlass;
+  warmGlass.lookPreset = rimell::kLookPresetWarmGlass;
+  warmGlass = rimell::normalizeRenderParams(warmGlass);
+  passed = require(warmGlass.flareIntensity > 0.15f && warmGlass.ghostCount == 2 &&
+                       warmGlass.coatingStyle == 0 && warmGlass.flareColour.r > warmGlass.flareColour.b,
+                   "warm glass preset did not apply the expected warm flare defaults") &&
+           passed;
+
+  rimell::RenderParams cleanPrime;
+  cleanPrime.lookPreset = rimell::kLookPresetCleanPrime;
+  cleanPrime = rimell::normalizeRenderParams(cleanPrime);
+  passed = require(near(cleanPrime.edgeBlur, 0.0f) && near(cleanPrime.flareIntensity, 0.02f) &&
+                       cleanPrime.ghostCount == 0 && cleanPrime.centerProtection > 0.8f,
+                   "clean prime preset did not stay restrained enough") &&
            passed;
 
   passed = require(near(rimell::aspectValue(0, 3.0f), 2.0f) &&

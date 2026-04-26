@@ -10,6 +10,10 @@ enum LookPreset {
   kLookPresetClassic2x = 2,
   kLookPresetNightFlare = 3,
   kLookPresetGeometryOnly = 4,
+  kLookPresetSoftScope = 5,
+  kLookPresetWarmGlass = 6,
+  kLookPresetVintageWide = 7,
+  kLookPresetCleanPrime = 8,
 };
 
 RenderParams clampRenderParams(RenderParams params);

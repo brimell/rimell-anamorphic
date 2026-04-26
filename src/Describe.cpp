@@ -69,24 +69,23 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addGroupParam(paramSet, "framingLetterboxGroup", "Letterbox + Crop", 0);
 
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
-  addChoiceParam(paramSet, "debugView", "Debug View", 0, "Off", "Source", "Highlight Matte",
-                 "Edge Mask");
-  addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, "Draft", "Preview", "Final",
-                 nullptr, nullptr, "Scales expensive flare, bloom, blur, and chromatic sampling.");
-  addChoiceParam(paramSet, "lookPreset", "Look Preset", 0, "Manual", "Subtle Modern",
-                 "Classic 2x", "Night Flare", "Geometry Only",
+  addChoiceParam(paramSet, "debugView", "Debug View", 0, {"Off", "Source", "Highlight Matte", "Edge Mask"});
+  addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, {"Draft", "Preview", "Final"},
+                 "Scales expensive flare, bloom, blur, and chromatic sampling.");
+  addChoiceParam(paramSet, "lookPreset", "Look Preset", 0,
+                 {"Manual", "Subtle Modern", "Classic 2x", "Night Flare", "Geometry Only",
+                  "Soft Scope", "Warm Glass", "Vintage Wide", "Clean Prime"},
                  "Creative starting points. Manual leaves individual controls unchanged.");
 
-  addChoiceParam(paramSet, "inputMode", "Input Mode", 0, "Spherical -> Anamorphic Look",
-                 "Real Anamorphic Utility", "Creative Warp", nullptr,
-                 nullptr, "Spherical mode emulates an anamorphic finish from normal circular-lens footage.");
-  addChoiceParam(paramSet, "squeezeMode", "Squeeze Mode", 0, "Off", "Squeeze", "Desqueeze",
-                 nullptr, nullptr,
+  addChoiceParam(paramSet, "inputMode", "Input Mode", 0,
+                 {"Spherical -> Anamorphic Look", "Real Anamorphic Utility", "Creative Warp"},
+                 "Spherical mode emulates an anamorphic finish from normal circular-lens footage.");
+  addChoiceParam(paramSet, "squeezeMode", "Squeeze Mode", 0, {"Off", "Squeeze", "Desqueeze"},
                  "Utility geometry for real anamorphic plates or creative warps; ignored by the main spherical look mode.");
   addDoubleParam(paramSet, "anamorphicTransfer", "Anamorphic Transfer", 1.0, 0.0, 1.0, 0.0, 1.0,
                  "Blends from spherical source mapping to the synthetic anamorphic view map.");
-  addChoiceParam(paramSet, "lensIdentity", "Lens Identity", 1, "Custom", "Modern 1.33x",
-                 "Classic 2x", "Scope Soft Edge", nullptr,
+  addChoiceParam(paramSet, "lensIdentity", "Lens Identity", 1, {"Custom", "Modern 1.33x",
+                 "Classic 2x", "Scope Soft Edge"},
                  "Preset identity used to drive geometry, highlight, flare, and ghost scaling.");
   // Backward compatibility for older saved projects.
   addDoubleParam(paramSet, "halationExposureThreshold", "Legacy Halation Exposure Threshold", 0.5,
@@ -132,7 +131,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "ghostSpread", "Ghost Spread", 0.35, 0.0, 1.0, 0.0, 1.0);
   addRGBParam(paramSet, "ghostTint", "Ghost Tint", {0.55f, 0.8f, 1.0f});
   addDoubleParam(paramSet, "ghostIntensity", "Ghost Intensity", 0.13, 0.0, 2.0, 0.0, 0.5);
-  addChoiceParam(paramSet, "coatingStyle", "Coating Style", 1, "Warm", "Neutral", "Cool");
+  addChoiceParam(paramSet, "coatingStyle", "Coating Style", 1, {"Warm", "Neutral", "Cool"});
   addDoubleParam(paramSet, "coatingWarmResponse", "Warm Coating Response", 0.75, 0.0, 3.0, 0.0, 1.5);
   addDoubleParam(paramSet, "coatingCoolResponse", "Cool Coating Response", 1.25, 0.0, 3.0, 0.0, 1.5);
 
@@ -180,7 +179,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "centerVeilScale", "Center Veil Scale", 0.08, 0.0, 2.0, 0.0, 0.5);
 
   addBooleanParam(paramSet, "guidesEnabled", "Aspect Guides", 0);
-  addChoiceParam(paramSet, "outputAspect", "Output Aspect", 1, "2.00:1", "2.39:1", "2.66:1", "Custom");
+  addChoiceParam(paramSet, "outputAspect", "Output Aspect", 1, {"2.00:1", "2.39:1", "2.66:1", "Custom"});
   addDoubleParam(paramSet, "customOutputAspect", "Custom Output Aspect", 2.39, 0.1, 8.0, 1.0, 4.0);
   addDoubleParam(paramSet, "safeArea", "Safe Area", 0.9, 0.5, 1.0, 0.8, 1.0);
   addBooleanParam(paramSet, "letterboxPreview", "Letterbox Preview", 0);
