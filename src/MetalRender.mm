@@ -13,6 +13,7 @@ namespace {
 
 struct MetalParams {
   float mix;
+  int debugView;
   int renderQuality;
   int inputMode;
   int squeezeMode;
@@ -138,6 +139,7 @@ struct CopyUniforms {
 MetalParams packParams(const RenderParams &params) {
   return {
       params.mix,
+  params.debugView,
       params.renderQuality,
       params.inputMode,
       params.squeezeMode,
@@ -236,7 +238,7 @@ const char *kernelSource = R"metal(
 using namespace metal;
 
 struct P {
-  float mix; int renderQuality; int inputMode; int squeezeMode; float anamorphicTransfer; int lensIdentity;
+  float mix; int debugView; int renderQuality; int inputMode; int squeezeMode; float anamorphicTransfer; int lensIdentity;
   float squeezeRatio; float axisWarp; float centerProtection; float edgeCompressionStart; float horizontalFovBoost;
   float virtualFocalLength; float breathingScale; float bokehStretch; float bokehRotation; float bokehEdgeFalloff;
   float bokehStretchScale; float bloomPixelScale; float bloomThresholdScale; int bloomRings; int bloomSamplesPerRing;
@@ -615,6 +617,15 @@ kernel void RimellAnamorphicKernel(const device float* src [[buffer(0)]], device
   int outIndex = (y - info.outputY1) * info.outputRowFloats + (x - info.outputX1) * 4;
 
   float4 original = sampleNearest(src, info, float(x), float(y));
+
+  if (p.debugView == 4) {
+    float h = smoothstepf(p.flareThreshold, 1.0f, luminance(original));
+    dst[outIndex] = h;
+    dst[outIndex + 1] = h;
+    dst[outIndex + 2] = h;
+    dst[outIndex + 3] = 1.0f;
+    return;
+  }
 
   float4 color = warpedSourceSample(src, info, p, float(x), float(y), 0.0f);
   float caPixels = p.lateralCA * p.lateralCAPixelScale;
