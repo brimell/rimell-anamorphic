@@ -54,6 +54,32 @@ struct DepthImage {
   DepthComponents components = DepthComponents::Alpha;
 };
 
+enum class Backend { CPU, Metal };
+
+struct InstanceData {};
+
+void readIntProperty(OfxPropertySetHandle properties, const char *name, int *value) {
+  if (!properties || !name || !value || !gPropertySuite) {
+    return;
+  }
+  (void)gPropertySuite->propGetInt(properties, name, 0, value);
+}
+
+void readPointerProperty(OfxPropertySetHandle properties, const char *name, void **value) {
+  if (!properties || !name || !value || !gPropertySuite) {
+    return;
+  }
+  (void)gPropertySuite->propGetPointer(properties, name, 0, value);
+}
+
+bool metalRuntimeAvailable() {
+#if defined(__APPLE__)
+  return true;
+#else
+  return false;
+#endif
+}
+
 template <typename T>
 float sampleDepthAlphaBilinear(const Image &image, float x, float y, float scale) {
   if (!image.data || image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2 ||
@@ -840,6 +866,49 @@ float roiPaddingPixels(const RenderParams &params) {
 
 } // namespace
 
+const char *backendName(Backend backend) {
+  switch (backend) {
+  case Backend::CPU:
+    return "CPU";
+  case Backend::Metal:
+    return "Metal";
+  }
+  return "Unknown";
+}
+
+OfxStatus createInstance(OfxImageEffectHandle instance) {
+  if (!instance || !gEffectSuite || !gPropertySuite) {
+    return kOfxStatErrBadHandle;
+  }
+
+  auto data = std::make_unique<InstanceData>();
+  OfxPropertySetHandle props = nullptr;
+  if (gEffectSuite->getPropertySet(instance, &props) != kOfxStatOK || !props) {
+    return kOfxStatErrBadHandle;
+  }
+
+  gPropertySuite->propSetPointer(props, kOfxPropInstanceData, 0, data.get());
+  data.release();
+  return kOfxStatOK;
+}
+
+OfxStatus destroyInstance(OfxImageEffectHandle instance) {
+  if (!instance || !gEffectSuite || !gPropertySuite) {
+    return kOfxStatErrBadHandle;
+  }
+
+  OfxPropertySetHandle props = nullptr;
+  if (gEffectSuite->getPropertySet(instance, &props) != kOfxStatOK || !props) {
+    return kOfxStatErrBadHandle;
+  }
+
+  void *ptr = nullptr;
+  gPropertySuite->propGetPointer(props, kOfxPropInstanceData, 0, &ptr);
+  delete static_cast<InstanceData *>(ptr);
+  gPropertySuite->propSetPointer(props, kOfxPropInstanceData, 0, nullptr);
+  return kOfxStatOK;
+}
+
 OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
   ScopedLogTimer renderTimer(LogLevel::Info, "render", "render");
   renderTimer.setResult("in_progress");
@@ -861,6 +930,20 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
             renderWindow.y1,
             renderWindow.x2,
             renderWindow.y2);
+  int hostMetalEnabledInt = 0;
+  void *hostMetalQueue = nullptr;
+#ifdef __APPLE__
+  readIntProperty(inArgs, kOfxImageEffectPropMetalEnabled, &hostMetalEnabledInt);
+  readPointerProperty(inArgs, kOfxImageEffectPropMetalCommandQueue, &hostMetalQueue);
+  if (hostMetalEnabledInt != 0 && !metalRuntimeAvailable()) {
+    logMessage(LogLevel::Warn,
+               "render",
+               "host requested Metal render but packaged Metal runtime is unavailable");
+    renderTimer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+    return kOfxStatGPURenderFailed;
+  }
+#endif
+
   OfxImageClipHandle sourceClip = nullptr;
   OfxImageClipHandle depthClip = nullptr;
   OfxImageClipHandle outputClip = nullptr;
