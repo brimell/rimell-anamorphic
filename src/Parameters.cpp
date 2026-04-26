@@ -240,6 +240,7 @@ RenderParams readParams(OfxImageEffectHandle effect, OfxTime time) {
       static_cast<float>(getDoubleParamAtTime(paramSet, "closeFocusMumps", time, params.closeFocusMumps));
   params.faceWidthCompensation = static_cast<float>(
       getDoubleParamAtTime(paramSet, "faceWidthCompensation", time, params.faceWidthCompensation));
+  params.enableDepthMap = getIntParamAtTime(paramSet, "enableDepthMap", time, params.enableDepthMap);
   params.focusDistance = static_cast<float>(getDoubleParamAtTime(paramSet, "focusDistance", time, params.focusDistance));
   params.breathingAmount =
       static_cast<float>(getDoubleParamAtTime(paramSet, "breathingAmount", time, params.breathingAmount));

@@ -49,6 +49,7 @@ Flare
 Flare
 Flare
 Flare
+Enable
 Focus
 Ghost
 Ghost

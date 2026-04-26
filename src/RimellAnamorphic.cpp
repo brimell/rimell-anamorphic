@@ -117,6 +117,7 @@ void writePresetParams(OfxParamSetHandle paramSet, const RenderParams &params) {
 
   setDoubleParam(paramSet, "closeFocusMumps", params.closeFocusMumps);
   setDoubleParam(paramSet, "faceWidthCompensation", params.faceWidthCompensation);
+  setIntParam(paramSet, "enableDepthMap", params.enableDepthMap);
   setDoubleParam(paramSet, "focusDistance", params.focusDistance);
   setDoubleParam(paramSet, "breathingAmount", params.breathingAmount);
   setDoubleParam(paramSet, "mumpsScale", params.mumpsScale);

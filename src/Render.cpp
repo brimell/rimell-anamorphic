@@ -1046,7 +1046,8 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
         const bool hasSource =
             fetchImage(sourceClip, time, hostMetal ? ImageStorage::Metal : ImageStorage::Cpu, &sourceImageHandle,
                        &source);
-        const bool hasDepth = depthClip &&
+        RenderParams params = readParams(instance, time);
+        const bool hasDepth = params.enableDepthMap != 0 && depthClip &&
             fetchImage(depthClip, time, hostMetal ? ImageStorage::Metal : ImageStorage::Cpu, &depthImageHandle,
                        &depth);
         char *sourceBitDepth = nullptr;
@@ -1083,7 +1084,6 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
 
           if (status == kOfxStatOK) {
             stage = "read_params";
-            RenderParams params = readParams(instance, time);
             params.hasDepth = hasDepth;
             params.depth = depth;
             logPrintf(LogLevel::Debug,

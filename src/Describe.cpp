@@ -238,6 +238,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
               nullptr, "geometryGroup");
     addDoubleParam(paramSet, "faceWidthCompensation", "Face Width Compensation", 0.0, 0.0, 1.0, 0.0, 0.6,
               nullptr, "geometryGroup");
+    addBooleanParam(paramSet, "enableDepthMap", "Enable Depth Map", 1,
+              "Uses the connected Depth clip for focus separation and depth-aware bokeh.", "geometryGroup");
     addDoubleParam(paramSet, "focusDistance", "Focus Distance", 0.5, 0.0, 1.0, 0.0, 1.0,
               nullptr, "geometryGroup");
     addDoubleParam(paramSet, "breathingAmount", "Breathing Amount", 0.0, -1.0, 1.0, -0.5, 0.5,
