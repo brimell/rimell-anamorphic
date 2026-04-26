@@ -8,7 +8,7 @@ namespace rimell {
 
 void addDoubleParam(OfxParamSetHandle paramSet, const char *name, const char *label, double defaultValue,
                     double minValue, double maxValue, double displayMin, double displayMax,
-                    const char *hint) {
+                    const char *hint, const char *parent) {
   if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {
     return;
   }
@@ -27,10 +27,13 @@ void addDoubleParam(OfxParamSetHandle paramSet, const char *name, const char *la
   if (hint) {
     gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);
   }
+  if (parent) {
+    gPropertySuite->propSetString(props, kOfxParamPropParent, 0, parent);
+  }
 }
 
 void addIntParam(OfxParamSetHandle paramSet, const char *name, const char *label, int defaultValue,
-                 int minValue, int maxValue, const char *hint) {
+                 int minValue, int maxValue, const char *hint, const char *parent) {
   if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {
     return;
   }
@@ -49,10 +52,13 @@ void addIntParam(OfxParamSetHandle paramSet, const char *name, const char *label
   if (hint) {
     gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);
   }
+  if (parent) {
+    gPropertySuite->propSetString(props, kOfxParamPropParent, 0, parent);
+  }
 }
 
 void addBooleanParam(OfxParamSetHandle paramSet, const char *name, const char *label, int defaultValue,
-                     const char *hint) {
+                     const char *hint, const char *parent) {
   if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {
     return;
   }
@@ -67,10 +73,13 @@ void addBooleanParam(OfxParamSetHandle paramSet, const char *name, const char *l
   if (hint) {
     gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);
   }
+  if (parent) {
+    gPropertySuite->propSetString(props, kOfxParamPropParent, 0, parent);
+  }
 }
 
 void addStringParam(OfxParamSetHandle paramSet, const char *name, const char *label, const char *defaultValue,
-                    const char *hint) {
+                    const char *hint, const char *parent) {
   if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {
     return;
   }
@@ -86,9 +95,13 @@ void addStringParam(OfxParamSetHandle paramSet, const char *name, const char *la
   if (hint) {
     gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);
   }
+  if (parent) {
+    gPropertySuite->propSetString(props, kOfxParamPropParent, 0, parent);
+  }
 }
 
-void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *label, int open) {
+void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *label, bool openByDefault,
+                   const char *hint) {
   if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {
     return;
   }
@@ -99,7 +112,10 @@ void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *lab
   }
 
   gPropertySuite->propSetString(props, kOfxPropLabel, 0, label);
-  gPropertySuite->propSetInt(props, kOfxParamPropGroupOpen, 0, open);
+  gPropertySuite->propSetInt(props, kOfxParamPropGroupOpen, 0, openByDefault ? 1 : 0);
+  if (hint) {
+    gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);
+  }
 }
 
 void addPageParam(OfxParamSetHandle paramSet, const char *name, const char *label) {
@@ -116,7 +132,8 @@ void addPageParam(OfxParamSetHandle paramSet, const char *name, const char *labe
 }
 
 void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *label, int defaultValue,
-                    std::initializer_list<const char *> options, const char *hint) {
+                    std::initializer_list<const char *> options, const char *hint,
+                    const char *parent) {
   if (!paramSet || !name || !label || options.size() < 2 || !gParameterSuite || !gPropertySuite) {
     return;
   }
@@ -135,10 +152,13 @@ void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *la
   if (hint) {
     gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);
   }
+  if (parent) {
+    gPropertySuite->propSetString(props, kOfxParamPropParent, 0, parent);
+  }
 }
 
 void addRGBParam(OfxParamSetHandle paramSet, const char *name, const char *label, Vec3 defaultValue,
-                 const char *hint) {
+                 const char *hint, const char *parent) {
   if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {
     return;
   }
@@ -154,6 +174,9 @@ void addRGBParam(OfxParamSetHandle paramSet, const char *name, const char *label
   gPropertySuite->propSetDouble(props, kOfxParamPropDefault, 2, defaultValue.b);
   if (hint) {
     gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);
+  }
+  if (parent) {
+    gPropertySuite->propSetString(props, kOfxParamPropParent, 0, parent);
   }
 }
 
