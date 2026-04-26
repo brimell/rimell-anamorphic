@@ -438,6 +438,8 @@ float4 opticalBaseSample(const device float* src, constant I& info, constant P& 
 }
 
 float4 edgeCharacter(const device float* src, constant I& info, constant P& p, float x, float y, float4 base) {
+  const int blurSteps = 7;
+  const int smearSteps = 9;
   float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
   float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
   float nx = (x - cx) / max(1.0f, float(info.width) * 0.5f);
@@ -448,18 +450,22 @@ float4 edgeCharacter(const device float* src, constant I& info, constant P& p, f
   float4 result = base;
   float blurRadius = p.edgeBlur * edge * p.edgeBlurPixels + p.fieldCurvature * edge * p.fieldCurvaturePixels;
   if (blurRadius > 0.05f) {
-    float4 blur = 0.0f; float weight = 0.0f; int blurSamples = p.renderQuality == 0 ? 2 : (p.renderQuality == 2 ? 4 : 3);
-    for (int i = -blurSamples; i <= blurSamples; ++i) {
-      float t = float(i) / float(blurSamples); float w = 1.0f - abs(t) * 0.55f;
+    float4 blur = 0.0f;
+    float weight = 0.0f;
+    for (int i = -blurSteps; i <= blurSteps; ++i) {
+      float t = float(i) / float(blurSteps);
+      float w = 1.0f - abs(t) * 0.55f;
       blur += warpedSourceSample(src, info, p, x + t * blurRadius, y + t * blurRadius * 0.25f, 0.0f) * w; weight += w;
     }
     result = lerp4(result, blur / weight, clamp01(edge * (p.edgeBlur + p.fieldCurvature)));
   }
   float smearRadius = edge * (p.tangentialSmear + p.horizontalSmear) * p.smearPixels;
   if (smearRadius > 0.05f) {
-    float4 smear = 0.0f; float weight = 0.0f; int smearSamples = p.renderQuality == 0 ? 2 : (p.renderQuality == 2 ? 5 : 4);
-    for (int i = -smearSamples; i <= smearSamples; ++i) {
-      float t = float(i) / float(smearSamples); float w = 1.0f - abs(t) * 0.7f;
+    float4 smear = 0.0f;
+    float weight = 0.0f;
+    for (int i = -smearSteps; i <= smearSteps; ++i) {
+      float t = float(i) / float(smearSteps);
+      float w = 1.0f - abs(t) * 0.7f;
       smear += warpedSourceSample(src, info, p, x + t * smearRadius, y, 0.0f) * w; weight += w;
     }
     result = lerp4(result, smear / weight, clamp01(edge * (p.tangentialSmear + p.horizontalSmear)));
