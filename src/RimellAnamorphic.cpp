@@ -158,6 +158,17 @@ void writePresetParams(OfxParamSetHandle paramSet, const RenderParams &params) {
   setIntParam(paramSet, "autoEdgeCrop", params.autoEdgeCrop);
 }
 
+bool stringEquals(const char *lhs, const char *rhs) {
+  return lhs && rhs && std::strcmp(lhs, rhs) == 0;
+}
+
+bool isUserEditedChange(OfxPropertySetHandle inArgs) {
+  char *reason = nullptr;
+  return inArgs && gPropertySuite &&
+         gPropertySuite->propGetString(inArgs, kOfxPropChangeReason, 0, &reason) == kOfxStatOK &&
+         stringEquals(reason, kOfxChangeUserEdited);
+}
+
 OfxStatus applyPresetChange(OfxImageEffectHandle effect, OfxPropertySetHandle inArgs) {
   if (!effect || !inArgs || !gEffectSuite || !gPropertySuite || !gParameterSuite) {
     return kOfxStatReplyDefault;
@@ -187,12 +198,52 @@ OfxStatus applyPresetChange(OfxImageEffectHandle effect, OfxPropertySetHandle in
 
   RenderParams params;
   params.lookPreset = preset;
-  params = normalizeRenderParams(params);
+  params = clampRenderParams(applyLookPreset(params));
 
   if (gParameterSuite->paramEditBegin) {
     gParameterSuite->paramEditBegin(paramSet, "Apply Rimell look preset");
   }
   writePresetParams(paramSet, params);
+  if (gParameterSuite->paramEditEnd) {
+    gParameterSuite->paramEditEnd(paramSet);
+  }
+
+  return kOfxStatOK;
+}
+
+OfxStatus clearPresetOnUserEdit(OfxImageEffectHandle effect, OfxPropertySetHandle inArgs) {
+  if (!effect || !inArgs || !gEffectSuite || !gPropertySuite || !gParameterSuite) {
+    return kOfxStatReplyDefault;
+  }
+
+  char *changedName = nullptr;
+  if (gPropertySuite->propGetString(inArgs, kOfxPropName, 0, &changedName) != kOfxStatOK ||
+      !changedName || !isUserEditedChange(inArgs)) {
+    return kOfxStatOK;
+  }
+
+  if (stringEquals(changedName, "lookPreset")) {
+    return applyPresetChange(effect, inArgs);
+  }
+
+  OfxParamSetHandle paramSet = nullptr;
+  if (gEffectSuite->getParamSet(effect, &paramSet) != kOfxStatOK || !paramSet) {
+    return kOfxStatErrBadHandle;
+  }
+
+  OfxParamHandle presetHandle = getParamHandle(paramSet, "lookPreset");
+  if (!presetHandle) {
+    return kOfxStatErrBadHandle;
+  }
+
+  int preset = kLookPresetManual;
+  if (gParameterSuite->paramGetValue(presetHandle, &preset) != kOfxStatOK || preset == kLookPresetManual) {
+    return kOfxStatOK;
+  }
+
+  if (gParameterSuite->paramEditBegin) {
+    gParameterSuite->paramEditBegin(paramSet, "Clear Rimell look preset");
+  }
   gParameterSuite->paramSetValue(presetHandle, static_cast<int>(kLookPresetManual));
   if (gParameterSuite->paramEditEnd) {
     gParameterSuite->paramEditEnd(paramSet);
@@ -278,7 +329,8 @@ OfxStatus pluginMain(const char *action, const void *handle, OfxPropertySetHandl
     }
     if (std::strcmp(action, kOfxActionInstanceChanged) == 0) {
       stage = "instance_changed";
-      const OfxStatus status = applyPresetChange(effect, inArgs);
+      const OfxStatus status = isUserEditedChange(inArgs) ? clearPresetOnUserEdit(effect, inArgs)
+                                                         : applyPresetChange(effect, inArgs);
       actionTimer.setResult(ofxStatusToString(status));
       return status;
     }

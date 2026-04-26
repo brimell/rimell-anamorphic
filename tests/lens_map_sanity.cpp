@@ -127,7 +127,7 @@ int main() {
 
   rimell::RenderParams cleanScope;
   cleanScope.lookPreset = rimell::kLookPresetCleanScope133;
-  cleanScope = rimell::normalizeRenderParams(cleanScope);
+  cleanScope = rimell::applyLookPreset(cleanScope);
   passed = require(cleanScope.lookPreset == rimell::kLookPresetCleanScope133 &&
                        cleanScope.centerProtection > 0.85f && cleanScope.flareIntensity > 0.02f &&
                        cleanScope.ghostCount == 0,
@@ -136,14 +136,14 @@ int main() {
 
   rimell::RenderParams night;
   night.lookPreset = rimell::kLookPresetNightPracticalFlares;
-  night = rimell::normalizeRenderParams(night);
+  night = rimell::applyLookPreset(night);
   passed = require(night.flareIntensity > 0.3f && night.ghostCount == 3 && night.bloomRadius > 0.2f,
                    "night flare preset did not apply expected creative defaults") &&
            passed;
 
   rimell::RenderParams geometryOnly;
   geometryOnly.lookPreset = rimell::kLookPresetGeometryOnly;
-  geometryOnly = rimell::normalizeRenderParams(geometryOnly);
+  geometryOnly = rimell::applyLookPreset(geometryOnly);
   passed = require(near(geometryOnly.flareIntensity, 0.0f) && near(geometryOnly.lateralCA, 0.0f) &&
                        geometryOnly.ghostCount == 0,
                    "geometry-only preset left additive optical effects enabled") &&
@@ -151,7 +151,7 @@ int main() {
 
   rimell::RenderParams utilityPreset;
   utilityPreset.lookPreset = rimell::kLookPresetRealAnamorphicUtility;
-  utilityPreset = rimell::normalizeRenderParams(utilityPreset);
+  utilityPreset = rimell::applyLookPreset(utilityPreset);
   passed = require(near(utilityPreset.anamorphicTransfer, 0.0f) && near(utilityPreset.flareIntensity, 0.0f) &&
                        near(utilityPreset.edgeCompression, 0.0f) && utilityPreset.squeezeRatio == 2.0f,
                    "real anamorphic utility preset did not suppress creative optics") &&
@@ -159,10 +159,19 @@ int main() {
 
   rimell::RenderParams debugNeutral;
   debugNeutral.lookPreset = rimell::kLookPresetDebugNeutral;
-  debugNeutral = rimell::normalizeRenderParams(debugNeutral);
+  debugNeutral = rimell::applyLookPreset(debugNeutral);
   passed = require(near(debugNeutral.anamorphicTransfer, 0.0f) && near(debugNeutral.flareIntensity, 0.0f) &&
                        near(debugNeutral.squeezeRatio, 1.0f) && debugNeutral.ghostCount == 0,
                    "debug neutral preset did not collapse to a safe baseline") &&
+           passed;
+
+  rimell::RenderParams normalizedPreset;
+  normalizedPreset.lookPreset = rimell::kLookPresetNightPracticalFlares;
+  normalizedPreset.edgeBlur = 0.42f;
+  normalizedPreset = rimell::normalizeRenderParams(normalizedPreset);
+  passed = require(normalizedPreset.lookPreset == rimell::kLookPresetNightPracticalFlares &&
+                       near(normalizedPreset.edgeBlur, 0.42f),
+                   "normalizeRenderParams started expanding presets again") &&
            passed;
 
   passed = require(near(rimell::aspectValue(0, 3.0f), 2.0f) &&

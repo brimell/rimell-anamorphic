@@ -745,7 +745,7 @@ RenderParams applyLookPreset(RenderParams params) {
 }
 
 RenderParams normalizeRenderParams(RenderParams params) {
-  return clampRenderParams(applyLookPreset(clampRenderParams(params)));
+  return clampRenderParams(params);
 }
 
 float aspectValue(int index, float customOutputAspect) {
