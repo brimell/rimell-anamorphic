@@ -119,14 +119,23 @@ int main() {
   clamped.ghostCount = 99;
   clamped.coatingStyle = -4;
   clamped = rimell::clampRenderParams(clamped);
-  passed = require(clamped.renderQuality == 2 && clamped.lookPreset == rimell::kLookPresetCleanPrime &&
+  passed = require(clamped.renderQuality == 2 && clamped.lookPreset == rimell::kLookPresetDebugNeutral &&
                        clamped.bloomRings == 8 && clamped.bloomSamplesPerRing == 3 &&
                        clamped.ghostCount == 8 && clamped.coatingStyle == 0,
                    "parameter clamps did not hold expected bounds") &&
            passed;
 
+  rimell::RenderParams cleanScope;
+  cleanScope.lookPreset = rimell::kLookPresetCleanScope133;
+  cleanScope = rimell::normalizeRenderParams(cleanScope);
+  passed = require(cleanScope.lookPreset == rimell::kLookPresetCleanScope133 &&
+                       cleanScope.centerProtection > 0.85f && cleanScope.flareIntensity > 0.02f &&
+                       cleanScope.ghostCount == 0,
+                   "clean scope preset did not become the default creative starting point") &&
+           passed;
+
   rimell::RenderParams night;
-  night.lookPreset = rimell::kLookPresetNightFlare;
+  night.lookPreset = rimell::kLookPresetNightPracticalFlares;
   night = rimell::normalizeRenderParams(night);
   passed = require(night.flareIntensity > 0.3f && night.ghostCount == 3 && night.bloomRadius > 0.2f,
                    "night flare preset did not apply expected creative defaults") &&
@@ -140,20 +149,20 @@ int main() {
                    "geometry-only preset left additive optical effects enabled") &&
            passed;
 
-  rimell::RenderParams warmGlass;
-  warmGlass.lookPreset = rimell::kLookPresetWarmGlass;
-  warmGlass = rimell::normalizeRenderParams(warmGlass);
-  passed = require(warmGlass.flareIntensity > 0.15f && warmGlass.ghostCount == 2 &&
-                       warmGlass.coatingStyle == 0 && warmGlass.flareColour.r > warmGlass.flareColour.b,
-                   "warm glass preset did not apply the expected warm flare defaults") &&
+  rimell::RenderParams utilityPreset;
+  utilityPreset.lookPreset = rimell::kLookPresetRealAnamorphicUtility;
+  utilityPreset = rimell::normalizeRenderParams(utilityPreset);
+  passed = require(near(utilityPreset.anamorphicTransfer, 0.0f) && near(utilityPreset.flareIntensity, 0.0f) &&
+                       near(utilityPreset.edgeCompression, 0.0f) && utilityPreset.squeezeRatio == 2.0f,
+                   "real anamorphic utility preset did not suppress creative optics") &&
            passed;
 
-  rimell::RenderParams cleanPrime;
-  cleanPrime.lookPreset = rimell::kLookPresetCleanPrime;
-  cleanPrime = rimell::normalizeRenderParams(cleanPrime);
-  passed = require(near(cleanPrime.edgeBlur, 0.0f) && near(cleanPrime.flareIntensity, 0.02f) &&
-                       cleanPrime.ghostCount == 0 && cleanPrime.centerProtection > 0.8f,
-                   "clean prime preset did not stay restrained enough") &&
+  rimell::RenderParams debugNeutral;
+  debugNeutral.lookPreset = rimell::kLookPresetDebugNeutral;
+  debugNeutral = rimell::normalizeRenderParams(debugNeutral);
+  passed = require(near(debugNeutral.anamorphicTransfer, 0.0f) && near(debugNeutral.flareIntensity, 0.0f) &&
+                       near(debugNeutral.squeezeRatio, 1.0f) && debugNeutral.ghostCount == 0,
+                   "debug neutral preset did not collapse to a safe baseline") &&
            passed;
 
   passed = require(near(rimell::aspectValue(0, 3.0f), 2.0f) &&

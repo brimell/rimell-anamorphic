@@ -10,188 +10,612 @@ T clampValue(T value, T minValue, T maxValue) {
   return std::max(minValue, std::min(maxValue, value));
 }
 
-void applySubtleModern(RenderParams &params) {
+const RenderParams kDefaultLook{};
+
+void resetLookControls(RenderParams &params) {
+  params.anamorphicTransfer = kDefaultLook.anamorphicTransfer;
+  params.lensIdentity = kDefaultLook.lensIdentity;
+  params.squeezeRatio = kDefaultLook.squeezeRatio;
+  params.axisWarp = kDefaultLook.axisWarp;
+  params.centerProtection = kDefaultLook.centerProtection;
+  params.edgeCompressionStart = kDefaultLook.edgeCompressionStart;
+  params.horizontalFovBoost = kDefaultLook.horizontalFovBoost;
+  params.virtualFocalLength = kDefaultLook.virtualFocalLength;
+  params.breathingScale = kDefaultLook.breathingScale;
+
+  params.bokehStretch = kDefaultLook.bokehStretch;
+  params.bokehRotation = kDefaultLook.bokehRotation;
+  params.bokehEdgeFalloff = kDefaultLook.bokehEdgeFalloff;
+  params.bokehStretchScale = kDefaultLook.bokehStretchScale;
+  params.bloomPixelScale = kDefaultLook.bloomPixelScale;
+  params.bloomThresholdScale = kDefaultLook.bloomThresholdScale;
+  params.bloomRings = kDefaultLook.bloomRings;
+  params.bloomSamplesPerRing = kDefaultLook.bloomSamplesPerRing;
+  params.bloomEdgeKeepScale = kDefaultLook.bloomEdgeKeepScale;
+  params.bloomVeilScale = kDefaultLook.bloomVeilScale;
+  params.bloomCreamScale = kDefaultLook.bloomCreamScale;
+
+  params.flareIntensity = kDefaultLook.flareIntensity;
+  params.flareLength = kDefaultLook.flareLength;
+  params.flareColour = kDefaultLook.flareColour;
+  params.flareThreshold = kDefaultLook.flareThreshold;
+  params.flareAngle = kDefaultLook.flareAngle;
+  params.flareStepDensity = kDefaultLook.flareStepDensity;
+  params.flareSpanScale = kDefaultLook.flareSpanScale;
+  params.flareFalloff = kDefaultLook.flareFalloff;
+
+  params.veil = kDefaultLook.veil;
+  params.bloomRadius = kDefaultLook.bloomRadius;
+  params.highlightCream = kDefaultLook.highlightCream;
+  params.blackLiftProtection = kDefaultLook.blackLiftProtection;
+
+  params.ghostCount = kDefaultLook.ghostCount;
+  params.ghostSpread = kDefaultLook.ghostSpread;
+  params.ghostTint = kDefaultLook.ghostTint;
+  params.ghostIntensity = kDefaultLook.ghostIntensity;
+  params.coatingStyle = kDefaultLook.coatingStyle;
+  params.coatingWarmResponse = kDefaultLook.coatingWarmResponse;
+  params.coatingCoolResponse = kDefaultLook.coatingCoolResponse;
+
+  params.edgeBlur = kDefaultLook.edgeBlur;
+  params.tangentialSmear = kDefaultLook.tangentialSmear;
+  params.radialFalloff = kDefaultLook.radialFalloff;
+  params.edgeBlurPixels = kDefaultLook.edgeBlurPixels;
+  params.fieldCurvaturePixels = kDefaultLook.fieldCurvaturePixels;
+  params.smearPixels = kDefaultLook.smearPixels;
+
+  params.barrel = kDefaultLook.barrel;
+  params.mustache = kDefaultLook.mustache;
+  params.verticalCompensation = kDefaultLook.verticalCompensation;
+  params.verticalCompensationScale = kDefaultLook.verticalCompensationScale;
+
+  params.closeFocusMumps = kDefaultLook.closeFocusMumps;
+  params.faceWidthCompensation = kDefaultLook.faceWidthCompensation;
+  params.focusDistance = kDefaultLook.focusDistance;
+  params.breathingAmount = kDefaultLook.breathingAmount;
+  params.mumpsScale = kDefaultLook.mumpsScale;
+
+  params.lateralCA = kDefaultLook.lateralCA;
+  params.longitudinalCA = kDefaultLook.longitudinalCA;
+  params.edgeOnlyCA = kDefaultLook.edgeOnlyCA;
+  params.lateralCAPixelScale = kDefaultLook.lateralCAPixelScale;
+
+  params.ovalVignette = kDefaultLook.ovalVignette;
+  params.vignetteAsymmetry = kDefaultLook.vignetteAsymmetry;
+  params.cornerBias = kDefaultLook.cornerBias;
+  params.ovalVignetteScale = kDefaultLook.ovalVignetteScale;
+  params.vignetteAsymmetryScale = kDefaultLook.vignetteAsymmetryScale;
+
+  params.horizontalSmear = kDefaultLook.horizontalSmear;
+  params.verticalSharpness = kDefaultLook.verticalSharpness;
+  params.fieldCurvature = kDefaultLook.fieldCurvature;
+
+  params.catEyeStrength = kDefaultLook.catEyeStrength;
+  params.bokehVignette = kDefaultLook.bokehVignette;
+  params.edgeCompression = kDefaultLook.edgeCompression;
+  params.catEyeDimScale = kDefaultLook.catEyeDimScale;
+  params.bokehVignetteDimScale = kDefaultLook.bokehVignetteDimScale;
+  params.edgeCompressionScale = kDefaultLook.edgeCompressionScale;
+  params.centerVeilScale = kDefaultLook.centerVeilScale;
+}
+
+void applyCleanScope(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
   params.lensIdentity = 1;
   params.squeezeRatio = 1.33f;
-  params.anamorphicTransfer = 0.72f;
-  params.centerProtection = 0.72f;
-  params.edgeCompression = 0.12f;
-  params.edgeBlur = 0.035f;
+  params.anamorphicTransfer = 0.42f;
+  params.centerProtection = 0.9f;
+  params.edgeCompressionStart = 0.72f;
+  params.edgeCompression = 0.06f;
+  params.bokehStretch = 0.12f;
+  params.bokehEdgeFalloff = 0.1f;
+  params.edgeBlur = 0.02f;
+  params.tangentialSmear = 0.01f;
+  params.horizontalSmear = 0.01f;
+  params.lateralCA = 0.012f;
+  params.veil = 0.015f;
+  params.bloomRadius = 0.08f;
+  params.highlightCream = 0.03f;
+  params.flareIntensity = 0.03f;
+  params.flareLength = 0.24f;
+  params.flareThreshold = 0.86f;
+  params.flareStepDensity = 4.0f;
+  params.ghostCount = 0;
+  params.ovalVignette = 0.03f;
+  params.closeFocusMumps = 0.03f;
+  params.faceWidthCompensation = 0.02f;
+}
+
+void applyModernControlled(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.lensIdentity = 1;
+  params.squeezeRatio = 1.8f;
+  params.anamorphicTransfer = 0.58f;
+  params.centerProtection = 0.82f;
+  params.edgeCompressionStart = 0.7f;
+  params.edgeCompression = 0.11f;
+  params.bokehStretch = 0.34f;
+  params.bokehEdgeFalloff = 0.18f;
+  params.edgeBlur = 0.03f;
   params.tangentialSmear = 0.02f;
   params.horizontalSmear = 0.02f;
-  params.lateralCA = 0.025f;
-  params.veil = 0.025f;
+  params.fieldCurvature = 0.03f;
+  params.lateralCA = 0.02f;
+  params.veil = 0.02f;
   params.bloomRadius = 0.1f;
+  params.highlightCream = 0.04f;
   params.flareIntensity = 0.05f;
-  params.flareLength = 0.35f;
-  params.ghostCount = 0;
-  params.ovalVignette = 0.04f;
+  params.flareLength = 0.3f;
+  params.flareThreshold = 0.83f;
+  params.ghostCount = 1;
+  params.ghostSpread = 0.26f;
+  params.ghostIntensity = 0.05f;
+  params.ovalVignette = 0.05f;
+  params.closeFocusMumps = 0.05f;
 }
 
-void applyClassic2x(RenderParams &params) {
+void applyClassic2xSoftEdge(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
   params.lensIdentity = 2;
   params.squeezeRatio = 2.0f;
-  params.anamorphicTransfer = 0.92f;
-  params.centerProtection = 0.5f;
-  params.edgeCompression = 0.34f;
+  params.anamorphicTransfer = 0.9f;
+  params.centerProtection = 0.58f;
+  params.edgeCompressionStart = 0.66f;
+  params.edgeCompression = 0.26f;
   params.bokehStretch = 0.42f;
   params.bokehEdgeFalloff = 0.24f;
-  params.edgeBlur = 0.11f;
-  params.tangentialSmear = 0.11f;
-  params.horizontalSmear = 0.08f;
-  params.fieldCurvature = 0.08f;
-  params.lateralCA = 0.075f;
-  params.veil = 0.055f;
+  params.edgeBlur = 0.08f;
+  params.tangentialSmear = 0.08f;
+  params.horizontalSmear = 0.06f;
+  params.fieldCurvature = 0.06f;
+  params.lateralCA = 0.06f;
+  params.veil = 0.05f;
   params.bloomRadius = 0.18f;
-  params.flareIntensity = 0.14f;
+  params.highlightCream = 0.08f;
+  params.flareIntensity = 0.12f;
   params.flareLength = 0.62f;
+  params.flareThreshold = 0.8f;
+  params.flareStepDensity = 6.0f;
   params.ghostCount = 2;
-  params.ghostIntensity = 0.16f;
-  params.ovalVignette = 0.11f;
-  params.closeFocusMumps = 0.18f;
+  params.ghostSpread = 0.34f;
+  params.ghostIntensity = 0.12f;
+  params.ovalVignette = 0.1f;
+  params.closeFocusMumps = 0.12f;
+  params.faceWidthCompensation = 0.03f;
 }
 
-void applyNightFlare(RenderParams &params) {
+void applyVintageBlueStreak(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.lensIdentity = 2;
+  params.squeezeRatio = 2.0f;
+  params.anamorphicTransfer = 0.98f;
+  params.centerProtection = 0.42f;
+  params.edgeCompressionStart = 0.6f;
+  params.edgeCompression = 0.34f;
+  params.bokehStretch = 0.52f;
+  params.bokehEdgeFalloff = 0.22f;
+  params.edgeBlur = 0.12f;
+  params.tangentialSmear = 0.12f;
+  params.horizontalSmear = 0.1f;
+  params.fieldCurvature = 0.1f;
+  params.lateralCA = 0.085f;
+  params.veil = 0.08f;
+  params.bloomRadius = 0.22f;
+  params.highlightCream = 0.12f;
+  params.blackLiftProtection = 0.7f;
+  params.flareColour = {0.3f, 0.68f, 1.0f};
+  params.flareIntensity = 0.22f;
+  params.flareLength = 0.84f;
+  params.flareThreshold = 0.76f;
+  params.flareStepDensity = 8.0f;
+  params.ghostCount = 3;
+  params.ghostSpread = 0.44f;
+  params.ghostIntensity = 0.16f;
+  params.ghostTint = {0.72f, 0.86f, 1.0f};
+  params.coatingStyle = 2;
+  params.coatingCoolResponse = 1.4f;
+  params.ovalVignette = 0.14f;
+  params.closeFocusMumps = 0.18f;
+  params.faceWidthCompensation = 0.02f;
+}
+
+void applyWarmCoatedScope(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.lensIdentity = 3;
+  params.squeezeRatio = 1.85f;
+  params.anamorphicTransfer = 0.72f;
+  params.centerProtection = 0.86f;
+  params.edgeCompressionStart = 0.7f;
+  params.edgeCompression = 0.1f;
+  params.bokehStretch = 0.32f;
+  params.bokehEdgeFalloff = 0.18f;
+  params.edgeBlur = 0.03f;
+  params.tangentialSmear = 0.02f;
+  params.horizontalSmear = 0.015f;
+  params.lateralCA = 0.02f;
+  params.veil = 0.035f;
+  params.bloomRadius = 0.14f;
+  params.highlightCream = 0.1f;
+  params.blackLiftProtection = 0.82f;
+  params.flareColour = {0.96f, 0.68f, 0.34f};
+  params.flareIntensity = 0.05f;
+  params.flareLength = 0.32f;
+  params.flareThreshold = 0.84f;
+  params.flareStepDensity = 5.0f;
+  params.ghostCount = 1;
+  params.ghostSpread = 0.24f;
+  params.ghostIntensity = 0.06f;
+  params.ghostTint = {0.95f, 0.78f, 0.58f};
+  params.coatingStyle = 0;
+  params.coatingWarmResponse = 1.55f;
+  params.coatingCoolResponse = 0.75f;
+  params.ovalVignette = 0.04f;
+  params.closeFocusMumps = 0.04f;
+}
+
+void applyNightPracticalFlares(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
   params.lensIdentity = 3;
   params.squeezeRatio = 1.8f;
-  params.anamorphicTransfer = 0.82f;
-  params.centerProtection = 0.58f;
-  params.bokehStretch = 0.48f;
+  params.anamorphicTransfer = 0.78f;
+  params.centerProtection = 0.68f;
+  params.edgeCompressionStart = 0.68f;
+  params.edgeCompression = 0.12f;
+  params.bokehStretch = 0.46f;
   params.bokehEdgeFalloff = 0.18f;
+  params.edgeBlur = 0.05f;
+  params.tangentialSmear = 0.04f;
+  params.horizontalSmear = 0.03f;
+  params.lateralCA = 0.035f;
   params.veil = 0.08f;
-  params.bloomRadius = 0.28f;
-  params.highlightCream = 0.2f;
-  params.blackLiftProtection = 0.78f;
-  params.flareIntensity = 0.38f;
-  params.flareLength = 0.86f;
-  params.flareThreshold = 0.74f;
+  params.bloomRadius = 0.24f;
+  params.highlightCream = 0.18f;
+  params.blackLiftProtection = 0.88f;
+  params.flareIntensity = 0.34f;
+  params.flareLength = 0.9f;
+  params.flareThreshold = 0.7f;
   params.flareStepDensity = 10.0f;
   params.ghostCount = 3;
   params.ghostSpread = 0.42f;
-  params.ghostIntensity = 0.2f;
-  params.edgeBlur = 0.07f;
-  params.lateralCA = 0.055f;
+  params.ghostIntensity = 0.18f;
+  params.ghostTint = {0.55f, 0.8f, 1.0f};
   params.ovalVignette = 0.08f;
+  params.closeFocusMumps = 0.08f;
+}
+
+void applyLowDistortionCinemaScope(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.lensIdentity = 3;
+  params.squeezeRatio = 2.0f;
+  params.anamorphicTransfer = 0.34f;
+  params.centerProtection = 0.96f;
+  params.edgeCompressionStart = 0.78f;
+  params.edgeCompression = 0.02f;
+  params.bokehStretch = 0.16f;
+  params.bokehEdgeFalloff = 0.08f;
+  params.edgeBlur = 0.01f;
+  params.tangentialSmear = 0.0f;
+  params.horizontalSmear = 0.0f;
+  params.fieldCurvature = 0.02f;
+  params.lateralCA = 0.008f;
+  params.veil = 0.0f;
+  params.bloomRadius = 0.06f;
+  params.highlightCream = 0.02f;
+  params.flareIntensity = 0.015f;
+  params.flareLength = 0.22f;
+  params.ghostCount = 0;
+  params.ovalVignette = 0.02f;
+  params.closeFocusMumps = 0.01f;
+  params.faceWidthCompensation = 0.02f;
+  params.mumpsScale = 0.12f;
+}
+
+void applySoftBackgroundOvalBokeh(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.lensIdentity = 1;
+  params.squeezeRatio = 1.8f;
+  params.anamorphicTransfer = 0.52f;
+  params.centerProtection = 0.98f;
+  params.edgeCompressionStart = 0.74f;
+  params.edgeCompression = 0.06f;
+  params.bokehStretch = 0.74f;
+  params.bokehEdgeFalloff = 0.36f;
+  params.bokehStretchScale = 2.6f;
+  params.edgeBlur = 0.04f;
+  params.tangentialSmear = 0.02f;
+  params.horizontalSmear = 0.02f;
+  params.fieldCurvature = 0.04f;
+  params.lateralCA = 0.012f;
+  params.veil = 0.02f;
+  params.bloomRadius = 0.26f;
+  params.bloomVeilScale = 0.6f;
+  params.bloomCreamScale = 1.0f;
+  params.highlightCream = 0.04f;
+  params.flareIntensity = 0.02f;
+  params.flareLength = 0.18f;
+  params.ghostCount = 0;
+  params.catEyeStrength = 0.12f;
+  params.bokehVignette = 0.1f;
+  params.ovalVignette = 0.08f;
+  params.closeFocusMumps = 0.02f;
+  params.faceWidthCompensation = 0.02f;
+}
+
+void applyWaterfallBokehExperimental(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.lensIdentity = 1;
+  params.squeezeRatio = 2.0f;
+  params.anamorphicTransfer = 0.66f;
+  params.centerProtection = 0.76f;
+  params.edgeCompressionStart = 0.7f;
+  params.edgeCompression = 0.16f;
+  params.bokehStretch = 0.9f;
+  params.bokehEdgeFalloff = 0.42f;
+  params.bokehStretchScale = 3.0f;
+  params.bokehRotation = 2.0f;
+  params.edgeBlur = 0.06f;
+  params.tangentialSmear = 0.05f;
+  params.horizontalSmear = 0.04f;
+  params.fieldCurvature = 0.06f;
+  params.lateralCA = 0.025f;
+  params.veil = 0.03f;
+  params.bloomRadius = 0.3f;
+  params.highlightCream = 0.08f;
+  params.flareIntensity = 0.04f;
+  params.flareLength = 0.3f;
+  params.ghostCount = 1;
+  params.ghostSpread = 0.22f;
+  params.ghostIntensity = 0.04f;
+  params.catEyeStrength = 0.22f;
+  params.bokehVignette = 0.14f;
+  params.ovalVignette = 0.1f;
+  params.closeFocusMumps = 0.04f;
+}
+
+void applyHeavyMumpsVintage(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.lensIdentity = 2;
+  params.squeezeRatio = 2.0f;
+  params.anamorphicTransfer = 0.96f;
+  params.centerProtection = 0.16f;
+  params.edgeCompressionStart = 0.52f;
+  params.edgeCompression = 0.42f;
+  params.barrel = 0.12f;
+  params.mustache = 0.08f;
+  params.bokehStretch = 0.46f;
+  params.bokehEdgeFalloff = 0.2f;
+  params.edgeBlur = 0.14f;
+  params.tangentialSmear = 0.15f;
+  params.horizontalSmear = 0.12f;
+  params.fieldCurvature = 0.12f;
+  params.lateralCA = 0.08f;
+  params.veil = 0.08f;
+  params.bloomRadius = 0.18f;
+  params.highlightCream = 0.08f;
+  params.flareIntensity = 0.1f;
+  params.flareLength = 0.56f;
+  params.ghostCount = 2;
+  params.ghostSpread = 0.34f;
+  params.ghostIntensity = 0.12f;
+  params.ovalVignette = 0.12f;
+  params.closeFocusMumps = 0.82f;
+  params.faceWidthCompensation = 0.12f;
+  params.mumpsScale = 1.6f;
+}
+
+void applyEdgeSmearExperimental(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.lensIdentity = 1;
+  params.squeezeRatio = 1.7f;
+  params.anamorphicTransfer = 0.62f;
+  params.centerProtection = 0.42f;
+  params.edgeCompressionStart = 0.58f;
+  params.edgeCompression = 0.14f;
+  params.edgeBlur = 0.18f;
+  params.tangentialSmear = 0.22f;
+  params.horizontalSmear = 0.2f;
+  params.fieldCurvature = 0.16f;
+  params.lateralCA = 0.04f;
+  params.veil = 0.02f;
+  params.bloomRadius = 0.08f;
+  params.flareIntensity = 0.02f;
+  params.flareLength = 0.18f;
+  params.ghostCount = 0;
+  params.catEyeStrength = 0.12f;
+  params.bokehVignette = 0.08f;
+  params.edgeCompressionScale = 0.3f;
+  params.centerVeilScale = 0.12f;
+  params.ovalVignette = 0.06f;
 }
 
 void applyGeometryOnly(RenderParams &params) {
-  params.lensIdentity = 1;
-  params.squeezeRatio = 1.5f;
-  params.anamorphicTransfer = 0.8f;
-  params.centerProtection = 0.65f;
-  params.edgeCompression = 0.2f;
-  params.barrel = 0.02f;
-  params.mustache = -0.01f;
-  params.veil = 0.0f;
-  params.bloomRadius = 0.0f;
-  params.highlightCream = 0.0f;
-  params.flareIntensity = 0.0f;
-  params.ghostCount = 0;
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.lensIdentity = 2;
+  params.squeezeRatio = 2.0f;
+  params.anamorphicTransfer = 1.0f;
+  params.centerProtection = 0.62f;
+  params.edgeCompressionStart = 0.6f;
+  params.edgeCompression = 0.28f;
+  params.barrel = 0.05f;
+  params.mustache = 0.02f;
+  params.bokehStretch = 0.0f;
+  params.bokehEdgeFalloff = 0.0f;
   params.edgeBlur = 0.0f;
   params.tangentialSmear = 0.0f;
   params.horizontalSmear = 0.0f;
   params.lateralCA = 0.0f;
   params.longitudinalCA = 0.0f;
+  params.veil = 0.0f;
+  params.bloomRadius = 0.0f;
+  params.highlightCream = 0.0f;
+  params.flareIntensity = 0.0f;
+  params.ghostCount = 0;
   params.ovalVignette = 0.0f;
   params.catEyeStrength = 0.0f;
   params.bokehVignette = 0.0f;
+  params.edgeCompressionScale = 0.08f;
 }
 
-void applySoftScope(RenderParams &params) {
-  params.lensIdentity = 1;
-  params.squeezeRatio = 1.5f;
-  params.anamorphicTransfer = 0.64f;
-  params.centerProtection = 0.78f;
-  params.edgeCompression = 0.08f;
-  params.bokehStretch = 0.22f;
-  params.bokehEdgeFalloff = 0.18f;
-  params.edgeBlur = 0.03f;
-  params.tangentialSmear = 0.015f;
-  params.horizontalSmear = 0.015f;
-  params.lateralCA = 0.02f;
-  params.veil = 0.02f;
-  params.bloomRadius = 0.14f;
-  params.flareIntensity = 0.035f;
-  params.flareLength = 0.28f;
-  params.ghostCount = 0;
-  params.ovalVignette = 0.03f;
-}
-
-void applyWarmGlass(RenderParams &params) {
-  params.lensIdentity = 3;
-  params.squeezeRatio = 1.85f;
-  params.anamorphicTransfer = 0.88f;
-  params.centerProtection = 0.6f;
-  params.edgeCompression = 0.22f;
-  params.bokehStretch = 0.38f;
-  params.bokehEdgeFalloff = 0.2f;
-  params.veil = 0.055f;
-  params.bloomRadius = 0.2f;
-  params.highlightCream = 0.12f;
-  params.blackLiftProtection = 0.72f;
-  params.flareIntensity = 0.18f;
-  params.flareLength = 0.72f;
-  params.flareThreshold = 0.76f;
-  params.flareStepDensity = 8.0f;
-  params.flareColour = {0.92f, 0.56f, 0.28f};
-  params.ghostCount = 2;
-  params.ghostSpread = 0.4f;
-  params.ghostIntensity = 0.14f;
-  params.ghostTint = {0.95f, 0.75f, 0.5f};
-  params.coatingStyle = 0;
-  params.coatingWarmResponse = 1.5f;
-  params.coatingCoolResponse = 0.8f;
-  params.edgeBlur = 0.06f;
-  params.lateralCA = 0.045f;
-  params.ovalVignette = 0.08f;
-}
-
-void applyVintageWide(RenderParams &params) {
-  params.lensIdentity = 2;
-  params.squeezeRatio = 2.0f;
-  params.anamorphicTransfer = 0.95f;
-  params.centerProtection = 0.46f;
-  params.edgeCompression = 0.38f;
-  params.bokehStretch = 0.5f;
-  params.bokehEdgeFalloff = 0.26f;
-  params.edgeBlur = 0.12f;
-  params.tangentialSmear = 0.12f;
-  params.horizontalSmear = 0.1f;
-  params.fieldCurvature = 0.1f;
-  params.lateralCA = 0.09f;
-  params.veil = 0.075f;
-  params.bloomRadius = 0.22f;
-  params.flareIntensity = 0.16f;
-  params.flareLength = 0.64f;
-  params.ghostCount = 3;
-  params.ghostSpread = 0.45f;
-  params.ghostIntensity = 0.18f;
-  params.ovalVignette = 0.14f;
-  params.closeFocusMumps = 0.2f;
-}
-
-void applyCleanPrime(RenderParams &params) {
-  params.lensIdentity = 1;
-  params.squeezeRatio = 1.33f;
-  params.anamorphicTransfer = 0.84f;
-  params.centerProtection = 0.86f;
-  params.edgeCompression = 0.04f;
-  params.bokehStretch = 0.12f;
-  params.bokehEdgeFalloff = 0.12f;
+void applyFlareOnlyControlled(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.lensIdentity = 0;
+  params.squeezeRatio = 1.0f;
+  params.anamorphicTransfer = 0.08f;
+  params.centerProtection = 1.0f;
+  params.edgeCompressionStart = 1.0f;
+  params.edgeCompression = 0.0f;
+  params.bokehStretch = 0.0f;
+  params.bokehEdgeFalloff = 0.0f;
   params.edgeBlur = 0.0f;
   params.tangentialSmear = 0.0f;
   params.horizontalSmear = 0.0f;
-  params.lateralCA = 0.01f;
+  params.lateralCA = 0.0f;
+  params.veil = 0.02f;
+  params.bloomRadius = 0.04f;
+  params.highlightCream = 0.02f;
+  params.flareIntensity = 0.24f;
+  params.flareLength = 0.68f;
+  params.flareThreshold = 0.8f;
+  params.flareStepDensity = 8.0f;
+  params.flareSpanScale = 0.9f;
+  params.flareFalloff = 3.2f;
+  params.ghostCount = 0;
+  params.ghostIntensity = 0.0f;
+  params.bloomVeilScale = 0.25f;
+}
+
+void applyRealAnamorphicUtility(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 1;
+  params.squeezeMode = 2;
+  params.lensIdentity = 0;
+  params.squeezeRatio = 2.0f;
+  params.anamorphicTransfer = 0.0f;
+  params.centerProtection = 1.0f;
+  params.edgeCompressionStart = 1.0f;
+  params.edgeCompression = 0.0f;
+  params.bokehStretch = 0.0f;
+  params.bokehEdgeFalloff = 0.0f;
+  params.edgeBlur = 0.0f;
+  params.tangentialSmear = 0.0f;
+  params.horizontalSmear = 0.0f;
+  params.lateralCA = 0.0f;
   params.longitudinalCA = 0.0f;
   params.veil = 0.0f;
-  params.bloomRadius = 0.06f;
-  params.highlightCream = 0.02f;
-  params.flareIntensity = 0.02f;
-  params.flareLength = 0.18f;
+  params.bloomRadius = 0.0f;
+  params.highlightCream = 0.0f;
+  params.flareIntensity = 0.0f;
+  params.flareLength = 0.0f;
   params.ghostCount = 0;
-  params.ovalVignette = 0.02f;
+  params.ghostIntensity = 0.0f;
+  params.ovalVignette = 0.0f;
   params.catEyeStrength = 0.0f;
   params.bokehVignette = 0.0f;
+  params.edgeCompressionScale = 0.0f;
+  params.guidesEnabled = 1;
+}
+
+void applyDebugNeutral(RenderParams &params) {
+  resetLookControls(params);
+  params.inputMode = 0;
+  params.squeezeMode = 0;
+  params.guidesEnabled = 0;
+  params.letterboxPreview = 0;
+  params.lensIdentity = 0;
+  params.squeezeRatio = 1.0f;
+  params.anamorphicTransfer = 0.0f;
+  params.centerProtection = 1.0f;
+  params.edgeCompressionStart = 1.0f;
+  params.edgeCompression = 0.0f;
+  params.horizontalFovBoost = 0.0f;
+  params.virtualFocalLength = 50.0f;
+  params.breathingScale = 0.0f;
+  params.bokehStretch = 0.0f;
+  params.bokehEdgeFalloff = 0.0f;
+  params.bokehStretchScale = 0.0f;
+  params.bloomPixelScale = 0.0f;
+  params.bloomThresholdScale = 0.0f;
+  params.bloomRings = 1;
+  params.bloomSamplesPerRing = 3;
+  params.bloomEdgeKeepScale = 0.0f;
+  params.bloomVeilScale = 0.0f;
+  params.bloomCreamScale = 0.0f;
+  params.flareIntensity = 0.0f;
+  params.flareLength = 0.0f;
+  params.flareThreshold = 1.0f;
+  params.flareStepDensity = 0.0f;
+  params.flareSpanScale = 0.0f;
+  params.flareFalloff = 0.0f;
+  params.veil = 0.0f;
+  params.bloomRadius = 0.0f;
+  params.highlightCream = 0.0f;
+  params.blackLiftProtection = 1.0f;
+  params.ghostCount = 0;
+  params.ghostSpread = 0.0f;
+  params.ghostIntensity = 0.0f;
+  params.coatingStyle = 1;
+  params.coatingWarmResponse = 0.0f;
+  params.coatingCoolResponse = 0.0f;
+  params.edgeBlur = 0.0f;
+  params.tangentialSmear = 0.0f;
+  params.radialFalloff = 1.0f;
+  params.edgeBlurPixels = 0.0f;
+  params.fieldCurvaturePixels = 0.0f;
+  params.smearPixels = 0.0f;
+  params.barrel = 0.0f;
+  params.mustache = 0.0f;
+  params.verticalCompensation = 0.0f;
+  params.verticalCompensationScale = 0.0f;
+  params.closeFocusMumps = 0.0f;
+  params.faceWidthCompensation = 0.0f;
+  params.focusDistance = 0.5f;
+  params.breathingAmount = 0.0f;
+  params.mumpsScale = 0.0f;
+  params.lateralCA = 0.0f;
+  params.longitudinalCA = 0.0f;
+  params.edgeOnlyCA = 0.0f;
+  params.lateralCAPixelScale = 0.0f;
+  params.ovalVignette = 0.0f;
+  params.vignetteAsymmetry = 0.0f;
+  params.cornerBias = 0.0f;
+  params.ovalVignetteScale = 0.0f;
+  params.vignetteAsymmetryScale = 0.0f;
+  params.horizontalSmear = 0.0f;
+  params.verticalSharpness = 0.0f;
+  params.fieldCurvature = 0.0f;
+  params.catEyeStrength = 0.0f;
+  params.bokehVignette = 0.0f;
+  params.edgeCompressionScale = 0.0f;
+  params.catEyeDimScale = 0.0f;
+  params.bokehVignetteDimScale = 0.0f;
+  params.edgeCompressionScale = 0.0f;
+  params.centerVeilScale = 0.0f;
 }
 
 } // namespace
@@ -201,7 +625,7 @@ RenderParams clampRenderParams(RenderParams params) {
   params.debugView = clampValue(params.debugView, 0, 3);
   params.renderQuality = clampValue(params.renderQuality, 0, 2);
   params.lookPreset = clampValue(params.lookPreset, static_cast<int>(kLookPresetManual),
-                                 static_cast<int>(kLookPresetCleanPrime));
+                                 static_cast<int>(kLookPresetDebugNeutral));
   params.inputMode = clampValue(params.inputMode, 0, 2);
   params.squeezeMode = clampValue(params.squeezeMode, 0, 2);
   params.anamorphicTransfer = clampValue(params.anamorphicTransfer, 0.0f, 1.0f);
@@ -229,29 +653,50 @@ RenderParams clampRenderParams(RenderParams params) {
 
 RenderParams applyLookPreset(RenderParams params) {
   switch (params.lookPreset) {
-  case kLookPresetSubtleModern:
-    applySubtleModern(params);
+  case kLookPresetCleanScope133:
+    applyCleanScope(params);
     break;
-  case kLookPresetClassic2x:
-    applyClassic2x(params);
+  case kLookPresetModern18Controlled:
+    applyModernControlled(params);
     break;
-  case kLookPresetNightFlare:
-    applyNightFlare(params);
+  case kLookPresetClassic2xSoftEdge:
+    applyClassic2xSoftEdge(params);
+    break;
+  case kLookPresetVintage2xBlueStreak:
+    applyVintageBlueStreak(params);
+    break;
+  case kLookPresetWarmCoatedScope:
+    applyWarmCoatedScope(params);
+    break;
+  case kLookPresetNightPracticalFlares:
+    applyNightPracticalFlares(params);
+    break;
+  case kLookPresetLowDistortionCinemaScope:
+    applyLowDistortionCinemaScope(params);
+    break;
+  case kLookPresetSoftBackgroundOvalBokeh:
+    applySoftBackgroundOvalBokeh(params);
+    break;
+  case kLookPresetWaterfallBokehExperimental:
+    applyWaterfallBokehExperimental(params);
+    break;
+  case kLookPresetHeavyMumpsVintage:
+    applyHeavyMumpsVintage(params);
+    break;
+  case kLookPresetEdgeSmearExperimental:
+    applyEdgeSmearExperimental(params);
     break;
   case kLookPresetGeometryOnly:
     applyGeometryOnly(params);
     break;
-  case kLookPresetSoftScope:
-    applySoftScope(params);
+  case kLookPresetFlareOnlyControlled:
+    applyFlareOnlyControlled(params);
     break;
-  case kLookPresetWarmGlass:
-    applyWarmGlass(params);
+  case kLookPresetRealAnamorphicUtility:
+    applyRealAnamorphicUtility(params);
     break;
-  case kLookPresetVintageWide:
-    applyVintageWide(params);
-    break;
-  case kLookPresetCleanPrime:
-    applyCleanPrime(params);
+  case kLookPresetDebugNeutral:
+    applyDebugNeutral(params);
     break;
   default:
     break;

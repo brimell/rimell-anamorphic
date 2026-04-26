@@ -587,16 +587,24 @@ The plugin currently implements the following behaviour:
 ### 0. Creative look presets
 
 * `Manual`, which leaves the individual controls as set
-* `Subtle Modern`, a restrained 1.33x-style starting point
-* `Classic 2x`, a stronger vintage-scope starting point
-* `Night Flare`, biased toward bright-source streaks, bloom, and ghosts
+* `Clean Scope 1.33x`, the default tasteful starting point for normal footage
+* `Modern 1.8x Controlled`, a restrained modern anamorphic look
+* `Classic 2x Soft Edge`, the main cinema-scope showcase preset
+* `Vintage 2x Blue Streak`, a stronger old-school anamorphic look with obvious flare
+* `Warm Coated Scope`, a softer, skin-friendly warm preset
+* `Night Practical Flares`, tuned for streetlights, signs, LEDs, and other bright practicals
+* `Low Distortion CinemaScope`, a restrained corporate/interview-oriented preset
+* `Soft Background Oval Bokeh`, a depth-friendly oval-bokeh starting point
+* `Waterfall Bokeh Experimental`, a stylised oval/cat-eye bokeh experiment
+* `Heavy Mumps Vintage`, a deliberately flawed close-focus vintage look
+* `Edge Smear Experimental`, an abstract smear-heavy warp
 * `Geometry Only`, which disables additive optical effects and keeps the synthetic mapping path
-* `Soft Scope`, a softer 1.5x-style starting point with light edge behaviour
-* `Warm Glass`, which pushes amber flares, warmer ghosts, and a denser glow
-* `Vintage Wide`, a heavier vintage-scope look with more smear and ghosting
-* `Clean Prime`, which keeps the anamorphic shape but pulls back the optical artifacts
+* `Flare Only Controlled`, which adds streaks without the full lens treatment
+* `Real Anamorphic Utility`, which is for already-squeezed footage
+* `Debug / Neutral`, a safe baseline for testing and reset
 
 These presets are exposed as starting points through the normal OFX parameter set. The individual controls remain public, so a host project can still keyframe or override the underlying look controls.
+The bokeh-heavy and depth-inspired presets are currently approximated with the existing highlight, edge, and subject-protection controls because depth-map input is still disabled.
 
 ### 1. Input and geometry mode architecture
 

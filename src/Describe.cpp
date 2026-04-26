@@ -61,10 +61,13 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addChoiceParam(paramSet, "debugView", "Debug View", 0, {"Off", "Source", "Highlight Matte", "Edge Mask"});
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, {"Draft", "Preview", "Final"},
                  "Scales expensive flare, bloom, blur, and chromatic sampling.");
-  addChoiceParam(paramSet, "lookPreset", "Look Preset", 0,
-                 {"Manual", "Subtle Modern", "Classic 2x", "Night Flare", "Geometry Only",
-                  "Soft Scope", "Warm Glass", "Vintage Wide", "Clean Prime"},
-                 "Creative starting points. Manual leaves individual controls unchanged.");
+  addChoiceParam(paramSet, "lookPreset", "Look Preset", 1,
+                 {"Manual", "Clean Scope 1.33x", "Modern 1.8x Controlled", "Classic 2x Soft Edge",
+                  "Vintage 2x Blue Streak", "Warm Coated Scope", "Night Practical Flares",
+                  "Low Distortion CinemaScope", "Soft Background Oval Bokeh",
+                  "Waterfall Bokeh Experimental", "Heavy Mumps Vintage", "Edge Smear Experimental",
+                  "Geometry Only", "Flare Only Controlled", "Real Anamorphic Utility", "Debug / Neutral"},
+                 "Creative starting points. Clean Scope 1.33x is the default; Manual leaves individual controls unchanged.");
 
   addChoiceParam(paramSet, "inputMode", "Input Mode", 0,
                  {"Spherical -> Anamorphic Look", "Real Anamorphic Utility", "Creative Warp"},
