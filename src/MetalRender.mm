@@ -540,6 +540,28 @@ float4 lensAdditives(const device float* src, constant I& info, constant P& p, f
       add.xyz += bloom.xyz * amount;
     }
   }
+
+  if (p.ghostCount > 0 && p.ghostSpread > 0.001f) {
+    float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
+    float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
+    float tintShift = p.coatingStyle == 0 ? p.coatingWarmResponse : (p.coatingStyle == 2 ? p.coatingCoolResponse : 1.0f);
+    int ghostCap = p.renderQuality == 2 ? 8 : 4;
+    int ghostCount = max(0, min(p.ghostCount, ghostCap));
+    for (int i = 1; i <= ghostCount; ++i) {
+      float scale = 1.0f + p.ghostSpread * float(i);
+      float4 g = warpedSourceSample(src,
+                                    info,
+                                    p,
+                                    cx - (x - cx) * scale * lensIdentityGhostScaleX(p),
+                                    cy - (y - cy) * scale * lensIdentityGhostScaleY(p),
+                                    0.0f);
+      float w = smoothstepf(p.flareThreshold, 1.0f, luminance(g)) * (p.ghostIntensity / float(i)) * tintShift;
+      add.x += g.x * p.ghostTintR * w;
+      add.y += g.y * p.ghostTintG * w;
+      add.z += g.z * p.ghostTintB * w;
+    }
+  }
+
   return add;
 }
 
