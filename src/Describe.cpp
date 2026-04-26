@@ -55,14 +55,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addPageParam(paramSet, "edgePage", "Edge / CA");
   addPageParam(paramSet, "framingPage", "Framing");
 
-  // Visual spacers for hosts that flatten OFX section metadata.
-  addStringParam(paramSet, "coreHeader", "=== Core ===");
-  addStringParam(paramSet, "geometryHeader", "=== Geometry ===");
-  addStringParam(paramSet, "highlightHeader", "=== Highlights / Flares ===");
-  addStringParam(paramSet, "edgeHeader", "=== Edge / CA ===");
-  addStringParam(paramSet, "framingHeader", "=== Framing ===");
-
   // Core controls.
+  addStringParam(paramSet, "coreHeader", "=== Core ===");
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
   addChoiceParam(paramSet, "debugView", "Debug View", 0, {"Off", "Source", "Highlight Matte", "Edge Mask"});
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, {"Draft", "Preview", "Final"},
@@ -86,6 +80,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "halationExposureThreshold", "Legacy Halation Exposure Threshold", 0.5,
                  0.0, 1.0, 0.0, 1.0);
   // Geometry controls.
+  addStringParam(paramSet, "geometryHeader", "=== Geometry ===");
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
   addDoubleParam(paramSet, "axisWarp", "Axis Warp", 0.0, 0.0, 1.0, 0.0, 1.0,
                  "Adds user-controlled horizontal/vertical separation on top of the selected lens identity.");
@@ -98,6 +93,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "breathingScale", "Breathing Scale", 0.12, 0.0, 1.0, 0.0, 0.35);
 
   // Highlights and flares.
+  addStringParam(paramSet, "highlightHeader", "=== Highlights / Flares ===");
   addDoubleParam(paramSet, "bloomRadius", "Bloom Radius", 0.12, 0.0, 1.0, 0.0, 0.7);
   addDoubleParam(paramSet, "bokehStretch", "Anamorphic Bloom Shape", 0.15, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "bokehRotation", "Bloom Shape Rotation", 0.0, -45.0, 45.0, -15.0, 15.0);
@@ -133,6 +129,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "coatingCoolResponse", "Cool Coating Response", 1.25, 0.0, 3.0, 0.0, 1.5);
 
   // Edge treatment and chromatic aberration.
+  addStringParam(paramSet, "edgeHeader", "=== Edge / CA ===");
   addDoubleParam(paramSet, "edgeBlur", "Edge Blur", 0.05, 0.0, 1.0, 0.0, 0.7);
   addDoubleParam(paramSet, "tangentialSmear", "Tangential Smear", 0.03, 0.0, 1.0, 0.0, 0.8);
   addDoubleParam(paramSet, "radialFalloff", "Radial Falloff", 0.65, 0.0, 1.0, 0.0, 1.0);
@@ -177,6 +174,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "centerVeilScale", "Center Veil Scale", 0.08, 0.0, 2.0, 0.0, 0.5);
 
   // Framing and guide overlays.
+  addStringParam(paramSet, "framingHeader", "=== Framing ===");
   addBooleanParam(paramSet, "guidesEnabled", "Aspect Guides", 0);
   addChoiceParam(paramSet, "outputAspect", "Output Aspect", 1, {"2.00:1", "2.39:1", "2.66:1", "Custom"});
   addDoubleParam(paramSet, "customOutputAspect", "Custom Output Aspect", 2.39, 0.1, 8.0, 1.0, 4.0);
