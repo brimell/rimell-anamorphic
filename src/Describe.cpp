@@ -75,8 +75,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addGroupParam(paramSet, "framingLetterboxGroup", "Letterbox + Crop", 0);
 
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
-  addChoiceParam(paramSet, "debugView", "Debug View", 0, "Off", "Source", "Depth Raw",
-                 "Depth Normalised", "Depth Focus Mask", "Depth Defocus Radius");
+  addChoiceParam(paramSet, "debugView", "Debug View", 0, "Off", "Source", "Depth",
+                 "Depth Focus Mask", "Highlight Matte", "Edge Mask");
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, "Draft", "Preview", "Final",
                  nullptr, nullptr, "Scales expensive flare, bloom, blur, and chromatic sampling.");
   addChoiceParam(paramSet, "lookPreset", "Look Preset", 0, "Manual", "Subtle Modern",
@@ -96,19 +96,12 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                  "Preset identity used to drive geometry, highlight, flare, and ghost scaling.");
   addBooleanParam(paramSet, "depthMapEnabled", "Use Depth Map", 1,
                   "Connect DaVinci Resolve's AI Depth Map output to the Depth input to drive focus-aware bokeh, blur, flares, ghosts, and longitudinal CA.");
-  addBooleanParam(paramSet, "previewDepthMap", "Preview Depth Map", 0,
-                  "Displays the connected depth clip as a grayscale output preview.");
   addBooleanParam(paramSet, "depthMapInvert", "Invert Depth Map", 0);
   addDoubleParam(paramSet, "focusDepth", "Focus Depth", 0.5, 0.0, 1.0, 0.0, 1.0);
-  addDoubleParam(paramSet, "depthFocusRange", "Focus Range", 0.12, 0.0, 1.0, 0.0, 0.5);
-  addDoubleParam(paramSet, "depthFalloff", "Depth Falloff", 0.1, 0.0, 1.0, 0.0, 0.5);
-  addDoubleParam(paramSet, "subjectProtection", "Subject Protection", 1.0, 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "depthFocusRange", "Depth Focus Range", 0.12, 0.0, 1.0, 0.0, 0.5);
   addDoubleParam(paramSet, "depthInfluence", "Depth Influence", 0.8, 0.0, 1.0, 0.0, 1.0);
-  addDoubleParam(paramSet, "depthDefocusPixels", "Depth Defocus", 18.0, 0.0, 160.0, 0.0, 60.0);
-  addDoubleParam(paramSet, "depthBloomBoost", "Depth Highlight Shape", 0.65, 0.0, 3.0, 0.0, 1.5);
-  // Backward compatibility for older saved projects.
-  addDoubleParam(paramSet, "halationExposureThreshold", "Legacy Halation Exposure Threshold", 0.5,
-                 0.0, 1.0, 0.0, 1.0);
+  addDoubleParam(paramSet, "depthDefocusPixels", "Depth Defocus Pixels", 18.0, 0.0, 160.0, 0.0, 60.0);
+  addDoubleParam(paramSet, "depthBloomBoost", "Depth Bloom Boost", 0.65, 0.0, 3.0, 0.0, 1.5);
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
   addDoubleParam(paramSet, "axisWarp", "Axis Warp", 0.0, 0.0, 1.0, 0.0, 1.0,
                  "Adds user-controlled horizontal/vertical separation on top of the selected lens identity.");
@@ -213,23 +206,11 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
     setParamParent(paramSet, name, "coreGroup");
   }
 
-  const char *depth[] = {"debugView", "depthMapEnabled", "previewDepthMap", "depthMapInvert", "focusDepth",
-                         "depthFocusRange", "depthFalloff", "subjectProtection", "depthInfluence",
-                         "depthDefocusPixels",
+  const char *depth[] = {"debugView", "depthMapEnabled", "depthMapInvert", "focusDepth",
+                         "depthFocusRange", "depthInfluence", "depthDefocusPixels",
                          "depthBloomBoost"};
   for (const char *name : depth) {
     setParamParent(paramSet, name, "depthGroup");
-  }
-  setParamParent(paramSet, "halationExposureThreshold", "depthGroup");
-  {
-    OfxParamHandle legacyParam = nullptr;
-    OfxPropertySetHandle legacyProps = nullptr;
-    if (gParameterSuite->paramGetHandle(paramSet, "halationExposureThreshold", &legacyParam,
-                                        &legacyProps) == kOfxStatOK &&
-        legacyProps) {
-      gPropertySuite->propSetInt(legacyProps, kOfxParamPropSecret, 0, 1);
-      gPropertySuite->propSetInt(legacyProps, kOfxParamPropEnabled, 0, 0);
-    }
   }
 
   const char *geometrySubGroups[] = {"geometryModeGroup", "geometryShapeGroup", "geometryFocusGroup"};
