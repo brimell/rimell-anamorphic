@@ -1224,8 +1224,11 @@ OfxStatus getClipPreferences(OfxImageEffectHandle /*instance*/, OfxPropertySetHa
       clipPropertyName("OfxImageClipPropComponents_", kOfxImageEffectOutputClipName);
   const std::string sourceComponents =
       clipPropertyName("OfxImageClipPropComponents_", kOfxImageEffectSimpleSourceClipName);
+    const std::string depthComponents =
+      clipPropertyName("OfxImageClipPropComponents_", kDepthClipName);
   gPropertySuite->propSetString(outArgs, outputComponents.c_str(), 0, kOfxImageComponentRGBA);
   gPropertySuite->propSetString(outArgs, sourceComponents.c_str(), 0, kOfxImageComponentRGBA);
+    gPropertySuite->propSetString(outArgs, depthComponents.c_str(), 0, kOfxImageComponentRGBA);
   gPropertySuite->propSetString(outArgs, kOfxImageEffectPropPreMultiplication, 0,
                                 kOfxImageUnPreMultiplied);
   gPropertySuite->propSetInt(outArgs, kOfxImageClipPropContinuousSamples, 0, 0);
