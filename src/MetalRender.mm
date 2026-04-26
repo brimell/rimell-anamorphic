@@ -546,6 +546,27 @@ float aspectValue(int index, float customOutputAspect) {
   return index == 0 ? 2.0f : (index == 1 ? 2.39f : (index == 2 ? 2.66f : max(0.1f, customOutputAspect)));
 }
 
+float3 applyVignetteCatEye(float3 rgb, float x, float y, constant I& info, constant P& p) {
+  float cx = (float(info.width) - 1.0f) * 0.5f;
+  float cy = (float(info.height) - 1.0f) * 0.5f;
+  float nx = (x - cx) / max(1.0f, float(info.width) * 0.5f);
+  float ny = (y - cy) / max(1.0f, float(info.height) * 0.5f);
+  nx = finiteOr(nx, 0.0f);
+  ny = finiteOr(ny, 0.0f);
+
+  float ovalY = ny * (1.0f + p.ovalVignette * p.ovalVignetteScale);
+  float asym = nx * p.vignetteAsymmetry * p.vignetteAsymmetryScale +
+               ny * p.cornerBias * p.vignetteAsymmetryScale;
+  float vignetteShape = sqrt(nx * nx + ovalY * ovalY) + asym;
+  float vignette = 1.0f - p.ovalVignette * smoothstepf(0.35f, 1.2f, vignetteShape);
+
+  float edge = smoothstepf(0.55f, 1.08f, sqrt(nx * nx + ny * ny));
+  float catEyeDim = p.catEyeStrength * edge * p.catEyeDimScale;
+
+  float dim = max(0.0f, vignette * (1.0f - catEyeDim));
+  return rgb * dim;
+}
+
 float4 applyVignetteAndGuides(float4 color, float x, float y, constant I& info, constant P& p) {
   float cx = (float(info.width) - 1.0f) * 0.5f, cy = (float(info.height) - 1.0f) * 0.5f;
   float nx = (x - cx) / max(1.0f, float(info.width) * 0.5f), ny = (y - cy) / max(1.0f, float(info.height) * 0.5f);
@@ -586,19 +607,28 @@ kernel void RimellAnamorphicKernel(const device float* src [[buffer(0)]], device
   int y = info.renderY1 + int(gid.y);
   if (x >= info.renderX2 || y >= info.renderY2) return;
   int outIndex = (y - info.outputY1) * info.outputRowFloats + (x - info.outputX1) * 4;
+
   float4 original = sampleNearest(src, info, float(x), float(y));
-  float2 cropped = applyEdgeCrop(float(x), float(y), info, p);
-  LensMap lm = buildLensMap(cropped.x, cropped.y, info, p);
-  float2 samplePixel = lensMapToSourcePixel(lm, info);
-  float4 mapped = sampleBilinear(src, info, samplePixel.x, samplePixel.y);
-  mapped = float4(finiteOr(mapped.x, original.x),
-                  finiteOr(mapped.y, original.y),
-                  finiteOr(mapped.z, original.z),
-                  finiteOr(mapped.w, original.w));
-  dst[outIndex] = mapped.x;
-  dst[outIndex + 1] = mapped.y;
-  dst[outIndex + 2] = mapped.z;
-  dst[outIndex + 3] = original.w;
+
+  float4 color = warpedSourceSample(src, info, p, float(x), float(y), 0.0f);
+  float caPixels = p.lateralCA * p.lateralCAPixelScale;
+  if (abs(caPixels) > 0.0001f) {
+    color.x = warpedSourceSample(src, info, p, float(x), float(y), caPixels).x;
+    color.z = warpedSourceSample(src, info, p, float(x), float(y), -caPixels).z;
+  }
+
+  float3 graded = applyVignetteCatEye(color.xyz, float(x - info.sourceX1), float(y - info.sourceY1), info, p);
+  float4 stylized = float4(finiteOr(graded.x, original.x),
+                           finiteOr(graded.y, original.y),
+                           finiteOr(graded.z, original.z),
+                           original.w);
+
+  float blend = clamp01(p.mix);
+  float4 outPixel = lerp4(original, stylized, blend);
+  dst[outIndex] = outPixel.x;
+  dst[outIndex + 1] = outPixel.y;
+  dst[outIndex + 2] = outPixel.z;
+  dst[outIndex + 3] = outPixel.w;
 }
 )metal";
 
