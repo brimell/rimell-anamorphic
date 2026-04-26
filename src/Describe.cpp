@@ -59,9 +59,9 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addStringParam(paramSet, "coreHeader", "=== Core ===");
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
   addChoiceParam(paramSet, "debugView", "Debug View", 0, {"Off", "Source", "Highlight Matte", "Edge Mask"});
-  addChoiceParam(paramSet, "processingBackend", "Processing Backend", kBackendCpu,
+  addChoiceParam(paramSet, "processingBackend", "Processing Backend", kBackendAuto,
                  {"CPU", "Auto", "Metal Experimental"},
-                 "CPU is the safe default. Auto may use Metal only when the render format and host state are known-good.");
+                 "Auto is the default on Apple and may use Metal only when the render format and host state are known-good.");
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, {"Draft", "Preview", "Final", "Ultra"},
                  "Caps expensive flare, bloom, blur, ghost, and chromatic sampling for playback or export.");
   addChoiceParam(paramSet, "lookPreset", "Look Preset", 1,

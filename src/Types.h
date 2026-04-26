@@ -47,7 +47,7 @@ struct RenderParams {
   float mix = 1.0f;
   int debugView = 0;
   int renderQuality = 1;
-  int processingBackend = kBackendCpu;
+  int processingBackend = kBackendAuto;
   int lookPreset = 0;
   int inputMode = 0;
   int squeezeMode = 0;
