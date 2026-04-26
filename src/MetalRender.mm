@@ -431,7 +431,7 @@ float4 opticalBaseSample(const device float* src, constant I& info, constant P& 
     float ny = (y - cy) / max(1.0f, float(info.height) * 0.5f);
     float edge = smoothstepf(0.15f, 1.05f, sqrt(nx * nx + ny * ny));
     float focusBias = 0.35f + abs(p.focusDistance - 0.5f) * 1.3f;
-    float radiusPixels = p.longitudinalCA * focusBias * edge * 3.0f;
+    float radiusPixels = p.longitudinalCA * focusBias * edge * 4.0f;
     float amount = clamp01(p.longitudinalCA * (0.35f + edge * 0.65f));
     base.x = lerpf(base.x, channelDefocusSample(src, info, p, x, y, radiusPixels).x, amount);
     base.z = lerpf(base.z, channelDefocusSample(src, info, p, x, y, radiusPixels * 0.65f).z, amount);
@@ -440,8 +440,6 @@ float4 opticalBaseSample(const device float* src, constant I& info, constant P& 
 }
 
 float4 edgeCharacter(const device float* src, constant I& info, constant P& p, float x, float y, float4 base) {
-  const int blurSteps = 7;
-  const int smearSteps = 9;
   float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
   float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
   float nx = (x - cx) / max(1.0f, float(info.width) * 0.5f);
@@ -454,8 +452,9 @@ float4 edgeCharacter(const device float* src, constant I& info, constant P& p, f
   if (blurRadius > 0.05f) {
     float4 blur = 0.0f;
     float weight = 0.0f;
-    for (int i = -blurSteps; i <= blurSteps; ++i) {
-      float t = float(i) / float(blurSteps);
+    int blurSamples = p.renderQuality == 0 ? 2 : (p.renderQuality == 2 ? 4 : 3);
+    for (int i = -blurSamples; i <= blurSamples; ++i) {
+      float t = float(i) / float(blurSamples);
       float w = 1.0f - abs(t) * 0.55f;
       blur += warpedSourceSample(src, info, p, x + t * blurRadius, y + t * blurRadius * 0.25f, 0.0f) * w; weight += w;
     }
@@ -465,8 +464,9 @@ float4 edgeCharacter(const device float* src, constant I& info, constant P& p, f
   if (smearRadius > 0.05f) {
     float4 smear = 0.0f;
     float weight = 0.0f;
-    for (int i = -smearSteps; i <= smearSteps; ++i) {
-      float t = float(i) / float(smearSteps);
+    int smearSamples = p.renderQuality == 0 ? 2 : (p.renderQuality == 2 ? 5 : 4);
+    for (int i = -smearSamples; i <= smearSamples; ++i) {
+      float t = float(i) / float(smearSamples);
       float w = 1.0f - abs(t) * 0.7f;
       smear += warpedSourceSample(src, info, p, x + t * smearRadius, y, 0.0f) * w; weight += w;
     }
@@ -481,6 +481,16 @@ float4 edgeCharacter(const device float* src, constant I& info, constant P& p, f
     result.z = clamp01(result.z + (result.z - (up.z + down.z) * 0.5f) * sharpen * 0.5f);
   }
   return result;
+}
+
+float edgeMaskAt(constant I& info, constant P& p, float x, float y) {
+  float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
+  float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
+  float nx = (x - cx) / max(1.0f, float(info.width) * 0.5f);
+  float ny = (y - cy) / max(1.0f, float(info.height) * 0.5f);
+  LensMap lm = buildLensMap(x, y, info, p);
+  float radius = max(lm.radius, sqrt(nx * nx + ny * ny));
+  return clamp01(max(lm.edgeMask, smoothstepf(max(0.0f, 1.0f - p.radialFalloff), 1.15f, radius)));
 }
 
 float highlightAt(const device float* src, constant I& info, constant P& p, float x, float y, float threshold) {
@@ -510,13 +520,13 @@ float4 lensAdditives(const device float* src, constant I& info, constant P& p, f
     }
   }
 
-  float bloomPixels = min(p.bloomRadius * p.bloomPixelScale, 48.0f);
+  float bloomPixels = p.bloomRadius * p.bloomPixelScale;
   if ((p.veil > 0.001f || p.highlightCream > 0.001f) && bloomPixels > 0.5f) {
     float rotation = p.bokehRotation * kPi / 180.0f;
     float cosR = cos(rotation), sinR = sin(rotation);
     float stretch = (1.0f + p.bokehStretch * p.bokehStretchScale) * lensIdentityBloomScale(p);
-    const int rings = 2;
-    const int samplesPerRing = 8;
+    int rings = max(1, int(round(float(p.bloomRings) * sampleScale)));
+    int samplesPerRing = max(3, int(round(float(p.bloomSamplesPerRing) * sampleScale)));
     float total = 0.0f; float4 bloom = 0.0f;
     for (int ring = 1; ring <= rings; ++ring) {
       float ringRadius = bloomPixels * float(ring) / float(rings);
@@ -545,8 +555,7 @@ float4 lensAdditives(const device float* src, constant I& info, constant P& p, f
     float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
     float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
     float tintShift = p.coatingStyle == 0 ? p.coatingWarmResponse : (p.coatingStyle == 2 ? p.coatingCoolResponse : 1.0f);
-    int ghostCap = p.renderQuality == 2 ? 8 : 4;
-    int ghostCount = max(0, min(p.ghostCount, ghostCap));
+    int ghostCount = p.renderQuality == 0 ? min(p.ghostCount, 3) : (p.renderQuality == 2 ? p.ghostCount : min(p.ghostCount, 6));
     for (int i = 1; i <= ghostCount; ++i) {
       float scale = 1.0f + p.ghostSpread * float(i);
       float4 g = warpedSourceSample(src,
@@ -561,6 +570,9 @@ float4 lensAdditives(const device float* src, constant I& info, constant P& p, f
       add.z += g.z * p.ghostTintB * w;
     }
   }
+
+  float centerGlow = smoothstepf(p.flareThreshold * 0.9f, 1.0f, luminance(base));
+  add.xyz += float3(p.veil * centerGlow * p.centerVeilScale);
 
   return add;
 }
@@ -633,30 +645,45 @@ kernel void RimellAnamorphicKernel(const device float* src [[buffer(0)]], device
 
   float4 original = sampleNearest(src, info, float(x), float(y));
 
-  if (p.debugView == 4) {
-    float h = smoothstepf(p.flareThreshold, 1.0f, luminance(original));
-    dst[outIndex] = h;
-    dst[outIndex + 1] = h;
-    dst[outIndex + 2] = h;
-    dst[outIndex + 3] = 1.0f;
+  if (p.debugView != 0) {
+    float4 debugColor = original;
+    if (p.debugView == 2 || p.debugView == 3) {
+      debugColor = float4(0.0f, 0.0f, 0.0f, 1.0f);
+    } else if (p.debugView == 4) {
+      float h = highlightAt(src, info, p, float(x), float(y), p.flareThreshold);
+      debugColor = float4(h, h, h, 1.0f);
+    } else if (p.debugView == 5) {
+      float e = edgeMaskAt(info, p, float(x), float(y));
+      debugColor = float4(e, e, e, 1.0f);
+    }
+    dst[outIndex] = debugColor.x;
+    dst[outIndex + 1] = debugColor.y;
+    dst[outIndex + 2] = debugColor.z;
+    dst[outIndex + 3] = debugColor.w;
     return;
   }
 
-  float4 color = warpedSourceSample(src, info, p, float(x), float(y), 0.0f);
-  float caPixels = p.lateralCA * p.lateralCAPixelScale;
-  if (abs(caPixels) > 0.0001f) {
-    color.x = warpedSourceSample(src, info, p, float(x), float(y), caPixels).x;
-    color.z = warpedSourceSample(src, info, p, float(x), float(y), -caPixels).z;
+  if (p.mix <= 0.0001f) {
+    dst[outIndex] = original.x;
+    dst[outIndex + 1] = original.y;
+    dst[outIndex + 2] = original.z;
+    dst[outIndex + 3] = original.w;
+    return;
   }
 
-  float3 graded = applyVignetteCatEye(color.xyz, float(x - info.sourceX1), float(y - info.sourceY1), info, p);
-  float4 stylized = float4(finiteOr(graded.x, original.x),
-                           finiteOr(graded.y, original.y),
-                           finiteOr(graded.z, original.z),
-                           original.w);
+  float4 color = opticalBaseSample(src, info, p, float(x), float(y));
+  color = edgeCharacter(src, info, p, float(x), float(y), color);
+  float4 add = lensAdditives(src, info, p, float(x), float(y), color);
+  color.xyz += add.xyz;
+  color = applyVignetteAndGuides(color, float(x - info.sourceX1), float(y - info.sourceY1), info, p);
+  color.w = original.w;
 
   float blend = clamp01(p.mix);
-  float4 outPixel = lerp4(original, stylized, blend);
+  float4 outPixel = lerp4(original, color, blend);
+  outPixel = float4(finiteOr(outPixel.x, original.x),
+                    finiteOr(outPixel.y, original.y),
+                    finiteOr(outPixel.z, original.z),
+                    original.w);
   dst[outIndex] = outPixel.x;
   dst[outIndex + 1] = outPixel.y;
   dst[outIndex + 2] = outPixel.z;
