@@ -193,6 +193,10 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
               nullptr, "highlightsGroup");
     addDoubleParam(paramSet, "blackLiftProtection", "Black Lift Protection", 0.65, 0.0, 1.0, 0.0, 1.0,
               nullptr, "highlightsGroup");
+    addBooleanParam(paramSet, "enableHighlightEffects", "Enable Highlight Effects", 1,
+          "Master enable for bloom, flare, ghosts, and center veil additives.", "highlightsGroup");
+    addBooleanParam(paramSet, "enableAdditionalBackgroundBlur", "Enable Additional Background Blur", 0,
+          "Applies a soft depth-aware background blur pass behind in-focus subjects.", "highlightsGroup");
 
     addIntParam(paramSet, "ghostCount", "Ghost Count", 0, 0, 8, nullptr, "highlightsGroup");
     addDoubleParam(paramSet, "ghostSpread", "Ghost Spread", 0.35, 0.0, 1.0, 0.0, 1.0, nullptr,
@@ -208,6 +212,9 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
               nullptr, "highlightsGroup");
 
   // Edge treatment and chromatic aberration.
+    addBooleanParam(paramSet, "enableEdgeEffects", "Enable Edge Effects", 1,
+              "Master enable for edge blur, tangential smear, field curvature, and vertical sharpness.",
+              "edgeCaGroup");
     addDoubleParam(paramSet, "edgeBlur", "Edge Blur", 0.05, 0.0, 1.0, 0.0, 0.7, nullptr, "edgeCaGroup");
     addDoubleParam(paramSet, "tangentialSmear", "Tangential Smear", 0.03, 0.0, 1.0, 0.0, 0.8,
               nullptr, "edgeCaGroup");

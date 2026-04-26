@@ -677,6 +677,9 @@ RenderParams clampRenderParams(RenderParams params) {
   params.coatingStyle = clampValue(params.coatingStyle, 0, 2);
   params.longitudinalCA = clampValue(params.longitudinalCA, 0.0f, 1.0f);
   params.edgeOnlyCA = params.edgeOnlyCA > 0.5f ? 1.0f : 0.0f;
+  params.enableHighlightEffects = params.enableHighlightEffects != 0 ? 1 : 0;
+  params.enableEdgeEffects = params.enableEdgeEffects != 0 ? 1 : 0;
+  params.enableAdditionalBackgroundBlur = params.enableAdditionalBackgroundBlur != 0 ? 1 : 0;
   params.guidesEnabled = params.guidesEnabled != 0 ? 1 : 0;
   params.outputAspect = clampValue(params.outputAspect, 0, 3);
   params.customOutputAspect = std::max(0.1f, params.customOutputAspect);

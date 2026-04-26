@@ -97,6 +97,9 @@ struct P {
   float bokehVignetteDimScale;
   float edgeCompressionScale;
   float centerVeilScale;
+  int enableHighlightEffects;
+  int enableEdgeEffects;
+  int enableAdditionalBackgroundBlur;
   int guidesEnabled;
   int outputAspect;
   float customOutputAspect;
@@ -581,6 +584,68 @@ float4 edgeCharacter(const device PixelChannel *src, constant I &info, constant 
   return result;
 }
 
+float4 additionalBackgroundBlur(const device PixelChannel *src,
+                               constant I &info,
+                               constant P &p,
+                               float x,
+                               float y,
+                               float4 base,
+                               LocalMapping map,
+                               const device PixelChannel *depth) {
+  if (p.enableAdditionalBackgroundBlur == 0) {
+    return base;
+  }
+
+  float focusDelta = 0.0f;
+  if (info.hasDepth != 0) {
+    float depthValue = sampleDepthBilinear(depth, info, x, y);
+    focusDelta = abs(p.focusDistance - depthValue);
+  }
+
+  float luma = luminance(base);
+  float backgroundMask = info.hasDepth != 0 ? clamp01((focusDelta - 0.04f) * 1.8f)
+                                            : clamp01((0.7f - luma) * 1.2f);
+  float highlightSuppress = 1.0f - smoothstepf(0.55f, 0.95f, luma);
+  float amount = backgroundMask * highlightSuppress;
+  if (amount <= 0.001f) {
+    return base;
+  }
+
+  float radius = (6.0f + p.bloomRadius * p.bloomPixelScale * 0.08f) * (0.35f + backgroundMask * 0.65f);
+  if (radius <= 0.35f) {
+    return base;
+  }
+
+  float2 offsets[8] = {
+      float2(1.0f, 0.0f),
+      float2(-1.0f, 0.0f),
+      float2(0.0f, 1.0f),
+      float2(0.0f, -1.0f),
+      float2(0.7f, 0.7f),
+      float2(-0.7f, 0.7f),
+      float2(0.7f, -0.7f),
+      float2(-0.7f, -0.7f),
+  };
+
+  float4 blur = 0.0f;
+  float weight = 0.0f;
+  for (int i = 0; i < 8; ++i) {
+    float2 o = offsets[i];
+    float w = (abs(o.x) > 0.5f && abs(o.y) > 0.5f) ? 0.85f : 1.0f;
+    blur += fastSourceSampleCA(src, info, p, map, o.x * radius, o.y * radius, 0.0f) * w;
+    weight += w;
+  }
+
+  if (weight <= 0.0f) {
+    return base;
+  }
+
+  blur /= weight;
+  blur.w = base.w;
+  float blend = min(0.55f, amount * 0.5f + p.edgeBlur * 0.15f);
+  return lerp4(base, blur, blend);
+}
+
 float edgeMaskAt(constant I &info, constant P &p, float x, float y) {
   float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
   float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
@@ -597,6 +662,9 @@ float highlightAt(const device PixelChannel *src, constant I &info, constant P &
 
 float4 lensAdditives(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base, LocalMapping map, LensMap lm, const device PixelChannel *depth) {
   float4 add = 0.0f;
+  if (p.enableHighlightEffects == 0) {
+    return add;
+  }
   bool flareEnabled = p.flareIntensity > 0.001f && p.flareLength > 0.001f;
   bool bloomEnabled = (p.veil > 0.001f || p.highlightCream > 0.001f) && p.bloomRadius > 0.001f &&
                       p.bloomPixelScale > 0.001f;
@@ -801,9 +869,14 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
   LocalMapping map = { spCenter, spDx, spDy, caDirection };
 
   float4 color = opticalBaseSample(src, info, p, float(x), float(y), map, depth);
-  color = edgeCharacter(src, info, p, float(x), float(y), color, map, centerLm, depth);
-  float4 add = lensAdditives(src, info, p, float(x), float(y), color, map, centerLm, depth);
-  color.xyz += add.xyz;
+  if (p.enableEdgeEffects != 0) {
+    color = edgeCharacter(src, info, p, float(x), float(y), color, map, centerLm, depth);
+  }
+  color = additionalBackgroundBlur(src, info, p, float(x), float(y), color, map, depth);
+  if (p.enableHighlightEffects != 0) {
+    float4 add = lensAdditives(src, info, p, float(x), float(y), color, map, centerLm, depth);
+    color.xyz += add.xyz;
+  }
   color = applyVignetteAndGuides(color, float(x - info.sourceX1), float(y - info.sourceY1), info, p);
   color.w = original.w;
 

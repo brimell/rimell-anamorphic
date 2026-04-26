@@ -105,6 +105,9 @@ struct MetalParams {
   float bokehVignetteDimScale;
   float edgeCompressionScale;
   float centerVeilScale;
+  int enableHighlightEffects;
+  int enableEdgeEffects;
+  int enableAdditionalBackgroundBlur;
   int guidesEnabled;
   int outputAspect;
   float customOutputAspect;
@@ -266,6 +269,9 @@ MetalParams packParams(const RenderParams &params) {
       params.bokehVignetteDimScale,
       params.edgeCompressionScale,
       params.centerVeilScale,
+      params.enableHighlightEffects,
+      params.enableEdgeEffects,
+      params.enableAdditionalBackgroundBlur,
       params.guidesEnabled,
       params.outputAspect,
       params.customOutputAspect,

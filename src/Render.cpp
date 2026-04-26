@@ -394,6 +394,66 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
 }
 
 template <typename T>
+Pixel additionalBackgroundBlur(const Image &source, float x, float y, int width, int height,
+                               const Pixel &base, const RenderParams &params) {
+  if (params.enableAdditionalBackgroundBlur == 0) {
+    return base;
+  }
+
+  float focusDelta = 0.0f;
+  if (params.hasDepth) {
+    const float depthValue = sampleBilinear<T>(params.depth, x, y).r;
+    focusDelta = std::abs(params.focusDistance - depthValue);
+  }
+
+  const float luma = luminance(base);
+  const float backgroundMask = params.hasDepth ? clamp01((focusDelta - 0.04f) * 1.8f)
+                                               : clamp01((0.7f - luma) * 1.2f);
+  const float highlightSuppress = 1.0f - smoothstep(0.55f, 0.95f, luma);
+  const float amount = backgroundMask * highlightSuppress;
+  if (amount <= 0.001f) {
+    return base;
+  }
+
+  const float radius =
+      (6.0f + params.bloomRadius * params.bloomPixelScale * 0.08f) * (0.35f + backgroundMask * 0.65f);
+  if (radius <= 0.35f) {
+    return base;
+  }
+
+  const float offsets[8][2] = {
+      {1.0f, 0.0f}, {-1.0f, 0.0f}, {0.0f, 1.0f}, {0.0f, -1.0f},
+      {0.7f, 0.7f}, {-0.7f, 0.7f}, {0.7f, -0.7f}, {-0.7f, -0.7f},
+  };
+
+  Pixel blur{};
+  float weight = 0.0f;
+  for (const auto &offset : offsets) {
+    const float ox = offset[0];
+    const float oy = offset[1];
+    const float w = (std::abs(ox) > 0.5f && std::abs(oy) > 0.5f) ? 0.85f : 1.0f;
+    const Pixel sample = warpedSourceSample<T>(source, x + ox * radius, y + oy * radius, width, height, params, 0.0f);
+    blur.r += sample.r * w;
+    blur.g += sample.g * w;
+    blur.b += sample.b * w;
+    blur.a += sample.a * w;
+    weight += w;
+  }
+
+  if (weight <= 0.0f) {
+    return base;
+  }
+
+  blur.r /= weight;
+  blur.g /= weight;
+  blur.b /= weight;
+  blur.a = base.a;
+
+  const float blend = std::min(0.55f, amount * 0.5f + params.edgeBlur * 0.15f);
+  return lerpPixel(base, blur, blend);
+}
+
+template <typename T>
 Pixel mappedSample(const Image &source, float x, float y, int width, int height, const RenderParams &params) {
   return warpedSourceSample<T>(source, x, y, width, height, params, 0.0f);
 }
@@ -620,12 +680,29 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
 
         Pixel color =
             opticalBaseSample<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, params);
-        color = edgeCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, color, params);
-        const Pixel add =
-            lensAdditives<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, params, color);
-        color.r += add.r;
-        color.g += add.g;
-        color.b += add.b;
+        if (params.enableEdgeEffects != 0) {
+          color = edgeCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, color,
+                                   params);
+        }
+        color = additionalBackgroundBlur<T>(source,
+                                            static_cast<float>(x),
+                                            static_cast<float>(y),
+                                            width,
+                                            height,
+                                            color,
+                                            params);
+        if (params.enableHighlightEffects != 0) {
+          const Pixel add = lensAdditives<T>(source,
+                                             static_cast<float>(x),
+                                             static_cast<float>(y),
+                                             width,
+                                             height,
+                                             params,
+                                             color);
+          color.r += add.r;
+          color.g += add.g;
+          color.b += add.b;
+        }
         color = applyVignetteAndGuides(color,
                                        static_cast<float>(x - source.bounds.x1),
                                        static_cast<float>(y - source.bounds.y1),

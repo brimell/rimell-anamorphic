@@ -281,6 +281,14 @@ RenderParams readParams(OfxImageEffectHandle effect, OfxTime time) {
       static_cast<float>(getDoubleParamAtTime(paramSet, "edgeCompressionScale", time, params.edgeCompressionScale));
   params.centerVeilScale =
       static_cast<float>(getDoubleParamAtTime(paramSet, "centerVeilScale", time, params.centerVeilScale));
+    params.enableHighlightEffects =
+      getIntParamAtTime(paramSet, "enableHighlightEffects", time, params.enableHighlightEffects);
+    params.enableEdgeEffects =
+      getIntParamAtTime(paramSet, "enableEdgeEffects", time, params.enableEdgeEffects);
+    params.enableAdditionalBackgroundBlur = getIntParamAtTime(paramSet,
+                                "enableAdditionalBackgroundBlur",
+                                time,
+                                params.enableAdditionalBackgroundBlur);
 
   params.guidesEnabled = getIntParamAtTime(paramSet, "guidesEnabled", time, params.guidesEnabled);
   params.outputAspect = getIntParamAtTime(paramSet, "outputAspect", time, params.outputAspect);

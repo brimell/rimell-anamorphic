@@ -135,6 +135,9 @@ struct RenderParams {
   float bokehVignetteDimScale = 0.18f;
   float edgeCompressionScale = 0.16f;
   float centerVeilScale = 0.08f;
+  int enableHighlightEffects = 1;
+  int enableEdgeEffects = 1;
+  int enableAdditionalBackgroundBlur = 0;
 
   int guidesEnabled = 0;
   int outputAspect = 0;
