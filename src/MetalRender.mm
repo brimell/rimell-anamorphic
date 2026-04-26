@@ -465,7 +465,7 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
 
     if (source.bounds.x1 != output.bounds.x1 || source.bounds.y1 != output.bounds.y1 ||
         source.bounds.x2 != output.bounds.x2 || source.bounds.y2 != output.bounds.y2) {
-      logPrintf(LogLevel::Warn,
+      logPrintf(LogLevel::Error,
                 "render.gpu",
                 "source/output bounds differ source=[%d,%d,%d,%d] output=[%d,%d,%d,%d]",
                 source.bounds.x1,
@@ -476,6 +476,8 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
                 output.bounds.y1,
                 output.bounds.x2,
                 output.bounds.y2);
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
     }
 
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)commandQueue;
@@ -587,6 +589,11 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
       return kOfxStatGPURenderFailed;
     }
 
+    logPrintf(LogLevel::Trace,
+              "render.gpu",
+              "commandBuffer retainedReferences=%d",
+              commandBuffer.retainedReferences ? 1 : 0);
+
     id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
     if (!encoder) {
       logMessage(LogLevel::Error, "render.gpu", "failed to create Metal command encoder");
@@ -604,7 +611,7 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
 
     const NSUInteger threadWidth = std::max<NSUInteger>(1, pipeline.threadExecutionWidth);
     const NSUInteger maxThreads = std::max<NSUInteger>(threadWidth, pipeline.maxTotalThreadsPerThreadgroup);
-    const NSUInteger threadHeight = std::max<NSUInteger>(1, maxThreads / threadWidth);
+    const NSUInteger threadHeight = std::min<NSUInteger>(std::max<NSUInteger>(1, maxThreads / threadWidth), 16);
     const MTLSize threadsPerGroup = MTLSizeMake(threadWidth, threadHeight, 1);
     const MTLSize gridSize = MTLSizeMake(static_cast<NSUInteger>(renderWidth), static_cast<NSUInteger>(renderHeight), 1);
 
@@ -651,7 +658,7 @@ OfxStatus renderMetalCopyFloat(void *commandQueue, const Image &source, const Im
 
     if (source.bounds.x1 != output.bounds.x1 || source.bounds.y1 != output.bounds.y1 ||
         source.bounds.x2 != output.bounds.x2 || source.bounds.y2 != output.bounds.y2) {
-      logPrintf(LogLevel::Warn,
+      logPrintf(LogLevel::Error,
                 "render.gpu",
                 "source/output bounds differ source=[%d,%d,%d,%d] output=[%d,%d,%d,%d]",
                 source.bounds.x1,
@@ -662,6 +669,8 @@ OfxStatus renderMetalCopyFloat(void *commandQueue, const Image &source, const Im
                 output.bounds.y1,
                 output.bounds.x2,
                 output.bounds.y2);
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
     }
 
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)commandQueue;
@@ -766,6 +775,11 @@ OfxStatus renderMetalCopyFloat(void *commandQueue, const Image &source, const Im
       return kOfxStatGPURenderFailed;
     }
 
+    logPrintf(LogLevel::Trace,
+              "render.gpu",
+              "copy commandBuffer retainedReferences=%d",
+              commandBuffer.retainedReferences ? 1 : 0);
+
     id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
     if (!encoder) {
       logMessage(LogLevel::Error, "render.gpu", "failed to create Metal copy command encoder");
@@ -781,7 +795,7 @@ OfxStatus renderMetalCopyFloat(void *commandQueue, const Image &source, const Im
 
     const NSUInteger threadWidth = std::max<NSUInteger>(1, pipeline.threadExecutionWidth);
     const NSUInteger maxThreads = std::max<NSUInteger>(threadWidth, pipeline.maxTotalThreadsPerThreadgroup);
-    const NSUInteger threadHeight = std::max<NSUInteger>(1, maxThreads / threadWidth);
+    const NSUInteger threadHeight = std::min<NSUInteger>(std::max<NSUInteger>(1, maxThreads / threadWidth), 16);
     const MTLSize threadsPerGroup = MTLSizeMake(threadWidth, threadHeight, 1);
     const MTLSize gridSize = MTLSizeMake(static_cast<NSUInteger>(renderWidth), static_cast<NSUInteger>(renderHeight), 1);
 
