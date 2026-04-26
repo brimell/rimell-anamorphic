@@ -59,8 +59,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addStringParam(paramSet, "coreHeader", "=== Core ===");
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
   addChoiceParam(paramSet, "debugView", "Debug View", 0, {"Off", "Source", "Highlight Matte", "Edge Mask"});
-  addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, {"Draft", "Preview", "Final"},
-                 "Scales expensive flare, bloom, blur, and chromatic sampling.");
+  addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, {"Draft", "Preview", "Final", "Ultra"},
+                 "Caps expensive flare, bloom, blur, ghost, and chromatic sampling for playback or export.");
   addChoiceParam(paramSet, "lookPreset", "Look Preset", 1,
                  {"Manual", "Clean Scope 1.33x", "Modern 1.8x Controlled", "Classic 2x Soft Edge",
                   "Vintage 2x Blue Streak", "Warm Coated Scope", "Night Practical Flares",

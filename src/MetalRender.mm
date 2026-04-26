@@ -428,7 +428,45 @@ float4 warpedSourceSample(const device PixelChannel* src, constant I& info, cons
   return sampleBilinear(src, info, sp.x, sp.y);
 }
 
-float qualityScale(constant P& p) { return p.renderQuality == 0 ? 0.5f : (p.renderQuality == 2 ? 1.5f : 1.0f); }
+float qualityScale(constant P& p) {
+  return p.renderQuality == 0 ? 0.35f : (p.renderQuality == 1 ? 0.65f : (p.renderQuality == 3 ? 1.5f : 1.0f));
+}
+
+int cappedEdgeBlurSamples(constant P& p) {
+  return p.renderQuality == 0 ? 1 : (p.renderQuality == 1 ? 2 : (p.renderQuality == 3 ? 6 : 4));
+}
+
+int cappedSmearSamples(constant P& p) {
+  return p.renderQuality == 0 ? 1 : (p.renderQuality == 1 ? 2 : (p.renderQuality == 3 ? 5 : 3));
+}
+
+int cappedFlareSteps(constant P& p) {
+  int requested = max(1, int(round((2.0f + p.flareLength * p.flareStepDensity) * qualityScale(p))));
+  int cap = p.renderQuality == 0 ? 8 : (p.renderQuality == 1 ? 16 : (p.renderQuality == 3 ? 48 : 32));
+  return min(requested, cap);
+}
+
+int cappedBloomRings(constant P& p) {
+  int requested = max(1, int(round(float(p.bloomRings) * qualityScale(p))));
+  int cap = p.renderQuality == 0 ? 1 : (p.renderQuality == 1 ? 2 : (p.renderQuality == 3 ? 8 : 3));
+  return min(requested, cap);
+}
+
+int cappedBloomSamplesPerRing(constant P& p) {
+  int requested = max(3, int(round(float(p.bloomSamplesPerRing) * qualityScale(p))));
+  int cap = p.renderQuality == 0 ? 4 : (p.renderQuality == 1 ? 6 : (p.renderQuality == 3 ? 16 : 8));
+  return min(requested, cap);
+}
+
+int cappedGhostCount(constant P& p) {
+  int cap = p.renderQuality == 0 ? 0 : (p.renderQuality == 1 ? 1 : (p.renderQuality == 3 ? 8 : 4));
+  return min(p.ghostCount, cap);
+}
+
+float cappedCAPixels(constant P& p) {
+  float cap = p.renderQuality == 0 ? 1.0f : (p.renderQuality == 1 ? 2.0f : (p.renderQuality == 3 ? 8.0f : 4.0f));
+  return min(p.lateralCA * p.lateralCAPixelScale, cap);
+}
 
 float4 channelDefocusSample(const device PixelChannel* src, constant I& info, constant P& p, float x, float y, float radiusPixels) {
   if (radiusPixels <= 0.05f) return warpedSourceSample(src, info, p, x, y, 0.0f);
@@ -446,8 +484,11 @@ float4 channelDefocusSample(const device PixelChannel* src, constant I& info, co
 float4 opticalBaseSample(const device PixelChannel* src, constant I& info, constant P& p, float x, float y) {
   float caPixels = p.lateralCA * p.lateralCAPixelScale;
   float4 base = warpedSourceSample(src, info, p, x, y, 0.0f);
-  base.x = warpedSourceSample(src, info, p, x, y, caPixels).x;
-  base.z = warpedSourceSample(src, info, p, x, y, -caPixels).z;
+  if (caPixels > 0.01f) {
+    float cappedCA = cappedCAPixels(p);
+    base.x = warpedSourceSample(src, info, p, x, y, cappedCA).x;
+    base.z = warpedSourceSample(src, info, p, x, y, -cappedCA).z;
+  }
   if (p.longitudinalCA > 0.001f) {
     float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
     float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
@@ -464,6 +505,12 @@ float4 opticalBaseSample(const device PixelChannel* src, constant I& info, const
 }
 
 float4 edgeCharacter(const device PixelChannel* src, constant I& info, constant P& p, float x, float y, float4 base) {
+  if (p.edgeBlur <= 0.001f && p.fieldCurvature <= 0.001f &&
+      p.tangentialSmear <= 0.001f && p.horizontalSmear <= 0.001f &&
+      p.verticalSharpness <= 0.001f) {
+    return base;
+  }
+
   float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
   float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
   float nx = (x - cx) / max(1.0f, float(info.width) * 0.5f);
@@ -476,7 +523,7 @@ float4 edgeCharacter(const device PixelChannel* src, constant I& info, constant 
   if (blurRadius > 0.05f) {
     float4 blur = 0.0f;
     float weight = 0.0f;
-    int blurSamples = p.renderQuality == 0 ? 2 : (p.renderQuality == 2 ? 4 : 3);
+    int blurSamples = cappedEdgeBlurSamples(p);
     for (int i = -blurSamples; i <= blurSamples; ++i) {
       float t = float(i) / float(blurSamples);
       float w = 1.0f - abs(t) * 0.55f;
@@ -488,7 +535,7 @@ float4 edgeCharacter(const device PixelChannel* src, constant I& info, constant 
   if (smearRadius > 0.05f) {
     float4 smear = 0.0f;
     float weight = 0.0f;
-    int smearSamples = p.renderQuality == 0 ? 2 : (p.renderQuality == 2 ? 5 : 4);
+    int smearSamples = cappedSmearSamples(p);
     for (int i = -smearSamples; i <= smearSamples; ++i) {
       float t = float(i) / float(smearSamples);
       float w = 1.0f - abs(t) * 0.7f;
@@ -523,14 +570,21 @@ float highlightAt(const device PixelChannel* src, constant I& info, constant P& 
 
 float4 lensAdditives(const device PixelChannel* src, constant I& info, constant P& p, float x, float y, float4 base) {
   float4 add = 0.0f;
-  float flareAngle = p.flareAngle * kPi / 180.0f;
-  float dirX = cos(flareAngle);
-  float dirY = sin(flareAngle);
-  float sampleScale = qualityScale(p);
-  int flareCap = p.renderQuality == 2 ? 64 : 32;
-  int flareSteps = max(1, min(flareCap, int(round((2.0f + p.flareLength * p.flareStepDensity) * sampleScale))));
+  bool flareEnabled = p.flareIntensity > 0.001f && p.flareLength > 0.001f;
+  bool bloomEnabled = (p.veil > 0.001f || p.highlightCream > 0.001f) &&
+                      p.bloomRadius > 0.001f && p.bloomPixelScale > 0.001f;
+  bool ghostEnabled = p.ghostIntensity > 0.001f && p.ghostCount > 0 && p.ghostSpread > 0.001f;
+  bool centerVeilEnabled = p.veil > 0.001f && p.centerVeilScale > 0.001f;
+  if (!flareEnabled && !bloomEnabled && !ghostEnabled && !centerVeilEnabled) {
+    return add;
+  }
+
+  int flareSteps = cappedFlareSteps(p);
   float flareSpan = p.flareLength * float(info.width) * p.flareSpanScale * lensIdentityFlareScale(p);
-  if (p.flareIntensity > 0.001f && flareSpan > 1.0f) {
+  if (flareEnabled && flareSpan > 1.0f) {
+    float flareAngle = p.flareAngle * kPi / 180.0f;
+    float dirX = cos(flareAngle);
+    float dirY = sin(flareAngle);
     for (int i = -flareSteps; i <= flareSteps; ++i) {
       if (i == 0) {
         continue;
@@ -545,12 +599,12 @@ float4 lensAdditives(const device PixelChannel* src, constant I& info, constant 
   }
 
   float bloomPixels = p.bloomRadius * p.bloomPixelScale;
-  if ((p.veil > 0.001f || p.highlightCream > 0.001f) && bloomPixels > 0.5f) {
+  if (bloomEnabled && bloomPixels > 0.5f) {
     float rotation = p.bokehRotation * kPi / 180.0f;
     float cosR = cos(rotation), sinR = sin(rotation);
     float stretch = (1.0f + p.bokehStretch * p.bokehStretchScale) * lensIdentityBloomScale(p);
-    int rings = max(1, int(round(float(p.bloomRings) * sampleScale)));
-    int samplesPerRing = max(3, int(round(float(p.bloomSamplesPerRing) * sampleScale)));
+    int rings = cappedBloomRings(p);
+    int samplesPerRing = cappedBloomSamplesPerRing(p);
     float total = 0.0f; float4 bloom = 0.0f;
     for (int ring = 1; ring <= rings; ++ring) {
       float ringRadius = bloomPixels * float(ring) / float(rings);
@@ -575,11 +629,11 @@ float4 lensAdditives(const device PixelChannel* src, constant I& info, constant 
     }
   }
 
-  if (p.ghostCount > 0 && p.ghostSpread > 0.001f) {
+  if (ghostEnabled) {
     float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
     float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
     float tintShift = p.coatingStyle == 0 ? p.coatingWarmResponse : (p.coatingStyle == 2 ? p.coatingCoolResponse : 1.0f);
-    int ghostCount = p.renderQuality == 0 ? min(p.ghostCount, 3) : (p.renderQuality == 2 ? p.ghostCount : min(p.ghostCount, 6));
+    int ghostCount = cappedGhostCount(p);
     for (int i = 1; i <= ghostCount; ++i) {
       float scale = 1.0f + p.ghostSpread * float(i);
       float4 g = warpedSourceSample(src,
@@ -595,8 +649,10 @@ float4 lensAdditives(const device PixelChannel* src, constant I& info, constant 
     }
   }
 
-  float centerGlow = smoothstepf(p.flareThreshold * 0.9f, 1.0f, luminance(base));
-  add.xyz += float3(p.veil * centerGlow * p.centerVeilScale);
+  if (centerVeilEnabled) {
+    float centerGlow = smoothstepf(p.flareThreshold * 0.9f, 1.0f, luminance(base));
+    add.xyz += float3(p.veil * centerGlow * p.centerVeilScale);
+  }
 
   return add;
 }

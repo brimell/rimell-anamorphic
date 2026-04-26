@@ -127,12 +127,74 @@ float edgeMaskAt(const Image &source, float x, float y, int width, int height,
 float qualityScale(const RenderParams &params) {
   switch (params.renderQuality) {
   case 0:
-    return 0.5f;
+    return 0.35f;
+  case 1:
+    return 0.65f;
   case 2:
+    return 1.0f;
+  case 3:
     return 1.5f;
   default:
     return 1.0f;
   }
+}
+
+int cappedEdgeBlurSamples(const RenderParams &params) {
+  switch (params.renderQuality) {
+  case 0:
+    return 1;
+  case 1:
+    return 2;
+  case 3:
+    return 6;
+  default:
+    return 4;
+  }
+}
+
+int cappedSmearSamples(const RenderParams &params) {
+  switch (params.renderQuality) {
+  case 0:
+    return 1;
+  case 1:
+    return 2;
+  case 3:
+    return 5;
+  default:
+    return 3;
+  }
+}
+
+int cappedFlareSteps(const RenderParams &params) {
+  const int requested =
+      std::max(1, static_cast<int>(std::round((2.0f + params.flareLength * params.flareStepDensity) *
+                                              qualityScale(params))));
+  const int cap = params.renderQuality == 0 ? 8 : (params.renderQuality == 1 ? 16 : (params.renderQuality == 3 ? 48 : 32));
+  return std::min(requested, cap);
+}
+
+int cappedBloomRings(const RenderParams &params) {
+  const int requested =
+      std::max(1, static_cast<int>(std::round(static_cast<float>(params.bloomRings) * qualityScale(params))));
+  const int cap = params.renderQuality == 0 ? 1 : (params.renderQuality == 1 ? 2 : (params.renderQuality == 3 ? 8 : 3));
+  return std::min(requested, cap);
+}
+
+int cappedBloomSamplesPerRing(const RenderParams &params) {
+  const int requested = std::max(
+      3, static_cast<int>(std::round(static_cast<float>(params.bloomSamplesPerRing) * qualityScale(params))));
+  const int cap = params.renderQuality == 0 ? 4 : (params.renderQuality == 1 ? 6 : (params.renderQuality == 3 ? 16 : 8));
+  return std::min(requested, cap);
+}
+
+int cappedGhostCount(const RenderParams &params) {
+  const int cap = params.renderQuality == 0 ? 0 : (params.renderQuality == 1 ? 1 : (params.renderQuality == 3 ? 8 : 4));
+  return std::min(params.ghostCount, cap);
+}
+
+float cappedCAPixels(const RenderParams &params) {
+  const float cap = params.renderQuality == 0 ? 1.0f : (params.renderQuality == 1 ? 2.0f : (params.renderQuality == 3 ? 8.0f : 4.0f));
+  return std::min(params.lateralCA * params.lateralCAPixelScale, cap);
 }
 
 template <typename T>
@@ -173,10 +235,13 @@ Pixel opticalBaseSample(const Image &source, float x, float y, int width, int he
                         const RenderParams &params) {
   const float caPixels = params.lateralCA * params.lateralCAPixelScale;
   Pixel base = warpedSourceSample<T>(source, x, y, width, height, params, 0.0f);
-  Pixel red = warpedSourceSample<T>(source, x, y, width, height, params, caPixels);
-  Pixel blue = warpedSourceSample<T>(source, x, y, width, height, params, -caPixels);
-  base.r = red.r;
-  base.b = blue.b;
+  if (caPixels > 0.01f) {
+    const float cappedCA = cappedCAPixels(params);
+    Pixel red = warpedSourceSample<T>(source, x, y, width, height, params, cappedCA);
+    Pixel blue = warpedSourceSample<T>(source, x, y, width, height, params, -cappedCA);
+    base.r = red.r;
+    base.b = blue.b;
+  }
 
   if (params.longitudinalCA > 0.001f) {
     const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
@@ -199,6 +264,12 @@ Pixel opticalBaseSample(const Image &source, float x, float y, int width, int he
 template <typename T>
 Pixel edgeCharacter(const Image &source, float x, float y, int width, int height, const Pixel &base,
                     const RenderParams &params) {
+  if (params.edgeBlur <= 0.001f && params.fieldCurvature <= 0.001f &&
+      params.tangentialSmear <= 0.001f && params.horizontalSmear <= 0.001f &&
+      params.verticalSharpness <= 0.001f) {
+    return base;
+  }
+
   const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
   const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
   const float nx = (x - cx) / std::max(1.0f, width * 0.5f);
@@ -215,7 +286,7 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
   if (blurRadius > 0.05f) {
     Pixel blur{};
     float weight = 0.0f;
-    const int blurSamples = params.renderQuality == 0 ? 2 : (params.renderQuality == 2 ? 4 : 3);
+    const int blurSamples = cappedEdgeBlurSamples(params);
     for (int i = -blurSamples; i <= blurSamples; ++i) {
       const float t = static_cast<float>(i) / static_cast<float>(blurSamples);
       const float w = 1.0f - std::abs(t) * 0.55f;
@@ -238,7 +309,7 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
   if (smearRadius > 0.05f) {
     Pixel smear{};
     float weight = 0.0f;
-    const int smearSamples = params.renderQuality == 0 ? 2 : (params.renderQuality == 2 ? 5 : 4);
+    const int smearSamples = cappedSmearSamples(params);
     for (int i = -smearSamples; i <= smearSamples; ++i) {
       const float t = static_cast<float>(i) / static_cast<float>(smearSamples);
       const float w = 1.0f - std::abs(t) * 0.7f;
@@ -285,15 +356,22 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
                     const Pixel &base) {
   Pixel add{};
 
-  const float flareAngle = params.flareAngle * kPi / 180.0f;
-  const float dirX = std::cos(flareAngle);
-  const float dirY = std::sin(flareAngle);
-  const float sampleScale = qualityScale(params);
-  const int flareSteps =
-      std::max(1, static_cast<int>(std::round((2.0f + params.flareLength * params.flareStepDensity) * sampleScale)));
+  const bool flareEnabled = params.flareIntensity > 0.001f && params.flareLength > 0.001f;
+  const bool bloomEnabled = (params.veil > 0.001f || params.highlightCream > 0.001f) &&
+                            params.bloomRadius > 0.001f && params.bloomPixelScale > 0.001f;
+  const bool ghostEnabled = params.ghostIntensity > 0.001f && params.ghostCount > 0 && params.ghostSpread > 0.001f;
+  const bool centerVeilEnabled = params.veil > 0.001f && params.centerVeilScale > 0.001f;
+  if (!flareEnabled && !bloomEnabled && !ghostEnabled && !centerVeilEnabled) {
+    return add;
+  }
+
+  const int flareSteps = cappedFlareSteps(params);
   const float flareSpan = params.flareLength * static_cast<float>(width) * params.flareSpanScale *
                           lensIdentityFlareScale(params);
-  if (params.flareIntensity > 0.001f && flareSpan > 1.0f) {
+  if (flareEnabled && flareSpan > 1.0f) {
+    const float flareAngle = params.flareAngle * kPi / 180.0f;
+    const float dirX = std::cos(flareAngle);
+    const float dirY = std::sin(flareAngle);
     for (int i = -flareSteps; i <= flareSteps; ++i) {
       if (i == 0) {
         continue;
@@ -310,15 +388,14 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
   }
 
   const float bloomPixels = params.bloomRadius * params.bloomPixelScale;
-  if ((params.veil > 0.001f || params.highlightCream > 0.001f) && bloomPixels > 0.5f) {
+  if (bloomEnabled && bloomPixels > 0.5f) {
     const float rotation = params.bokehRotation * kPi / 180.0f;
     const float cosR = std::cos(rotation);
     const float sinR = std::sin(rotation);
     const float stretch = (1.0f + params.bokehStretch * params.bokehStretchScale) *
                           lensIdentityBloomScale(params);
-    const int rings = std::max(1, static_cast<int>(std::round(static_cast<float>(params.bloomRings) * sampleScale)));
-    const int samplesPerRing =
-        std::max(3, static_cast<int>(std::round(static_cast<float>(params.bloomSamplesPerRing) * sampleScale)));
+    const int rings = cappedBloomRings(params);
+    const int samplesPerRing = cappedBloomSamplesPerRing(params);
     float total = 0.0f;
     Pixel bloom{};
     for (int ring = 1; ring <= rings; ++ring) {
@@ -355,14 +432,13 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
     }
   }
 
-  if (params.ghostCount > 0 && params.ghostSpread > 0.001f) {
+  if (ghostEnabled) {
     const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
     const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
     const float tintShift = params.coatingStyle == 0
                                 ? params.coatingWarmResponse
                                 : (params.coatingStyle == 2 ? params.coatingCoolResponse : 1.0f);
-    const int ghostCount =
-        params.renderQuality == 0 ? std::min(params.ghostCount, 3) : (params.renderQuality == 2 ? params.ghostCount : std::min(params.ghostCount, 6));
+    const int ghostCount = cappedGhostCount(params);
     for (int i = 1; i <= ghostCount; ++i) {
       const float scale = 1.0f + params.ghostSpread * static_cast<float>(i);
       const float sx = cx - (x - cx) * scale * lensIdentityGhostScaleX(params);
@@ -376,10 +452,12 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
     }
   }
 
-  const float centerGlow = smoothstep(params.flareThreshold * 0.9f, 1.0f, luminance(base));
-  add.r += params.veil * centerGlow * params.centerVeilScale;
-  add.g += params.veil * centerGlow * params.centerVeilScale;
-  add.b += params.veil * centerGlow * params.centerVeilScale;
+  if (centerVeilEnabled) {
+    const float centerGlow = smoothstep(params.flareThreshold * 0.9f, 1.0f, luminance(base));
+    add.r += params.veil * centerGlow * params.centerVeilScale;
+    add.g += params.veil * centerGlow * params.centerVeilScale;
+    add.b += params.veil * centerGlow * params.centerVeilScale;
+  }
 
   return add;
 }

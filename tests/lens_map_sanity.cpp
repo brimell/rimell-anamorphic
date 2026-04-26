@@ -119,7 +119,7 @@ int main() {
   clamped.ghostCount = 99;
   clamped.coatingStyle = -4;
   clamped = rimell::clampRenderParams(clamped);
-  passed = require(clamped.renderQuality == 2 && clamped.lookPreset == rimell::kLookPresetDebugNeutral &&
+  passed = require(clamped.renderQuality == 3 && clamped.lookPreset == rimell::kLookPresetDebugNeutral &&
                        clamped.bloomRings == 8 && clamped.bloomSamplesPerRing == 3 &&
                        clamped.ghostCount == 8 && clamped.coatingStyle == 0,
                    "parameter clamps did not hold expected bounds") &&
