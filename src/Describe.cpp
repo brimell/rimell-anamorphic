@@ -49,11 +49,11 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   gEffectSuite->getParamSet(effect, &paramSet);
 
   // Top-level panel sections.
-  addGroupParam(paramSet, "coreGroup", "Core", 1);
-  addGroupParam(paramSet, "geometryGroup", "Geometry", 1);
-  addGroupParam(paramSet, "highlightGroup", "Highlights / Flares", 0);
-  addGroupParam(paramSet, "edgeGroup", "Edge / CA", 0);
-  addGroupParam(paramSet, "framingGroup", "Framing", 0);
+  addPageParam(paramSet, "corePage", "Core");
+  addPageParam(paramSet, "geometryPage", "Geometry");
+  addPageParam(paramSet, "highlightPage", "Highlights / Flares");
+  addPageParam(paramSet, "edgePage", "Edge / CA");
+  addPageParam(paramSet, "framingPage", "Framing");
 
   // Core controls.
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
@@ -181,12 +181,6 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addBooleanParam(paramSet, "autoEdgeCrop", "Auto Edge Crop", 0,
                   "Crops in by the smallest amount needed to keep warped edge samples inside the source image.");
 
-  const char *core[] = {"mix", "debugView", "renderQuality", "lookPreset"};
-  for (const char *name : core) {
-    setParamParent(paramSet, name, "coreGroup");
-  }
-
-  setParamParent(paramSet, "halationExposureThreshold", "coreGroup");
   {
     OfxParamHandle legacyParam = nullptr;
     OfxPropertySetHandle legacyProps = nullptr;
@@ -198,6 +192,12 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
     }
   }
 
+  const char *core[] = {"mix", "debugView", "renderQuality", "lookPreset"};
+  for (const char *name : core) {
+    addPageChild(paramSet, "corePage", name);
+  }
+  addPageChild(paramSet, "corePage", "halationExposureThreshold");
+
   const char *geometry[] = {"inputMode",       "squeezeMode",     "anamorphicTransfer", "lensIdentity",
                             "squeezeRatio",    "axisWarp",        "centerProtection",   "edgeCompressionStart",
                             "horizontalFovBoost", "virtualFocalLength", "breathingScale",  "barrel",
@@ -205,7 +205,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                             "edgeCompression", "edgeCompressionScale", "closeFocusMumps",
                             "faceWidthCompensation", "focusDistance", "breathingAmount", "mumpsScale"};
   for (const char *name : geometry) {
-    setParamParent(paramSet, name, "geometryGroup");
+    addPageChild(paramSet, "geometryPage", name);
   }
 
   const char *highlights[] = {"bloomRadius",         "bokehStretch",        "bokehRotation",
@@ -219,27 +219,27 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                               "ghostSpread",         "ghostTint",           "ghostIntensity",
                               "coatingStyle",        "coatingWarmResponse", "coatingCoolResponse"};
   for (const char *name : highlights) {
-    setParamParent(paramSet, name, "highlightGroup");
+    addPageChild(paramSet, "highlightPage", name);
   }
 
-  const char *edge[] = {"edgeBlur",           "tangentialSmear",   "radialFalloff",
+  const char *edge[] = {"edgeBlur",           "tangentialSmear",      "radialFalloff",
                         "edgeBlurPixels",     "fieldCurvaturePixels", "smearPixels",
-                        "lateralCA",          "lateralCAPixelScale", "longitudinalCA",
-                        "edgeOnlyCA",         "ovalVignette",      "vignetteAsymmetry",
-                        "cornerBias",         "ovalVignetteScale",  "vignetteAsymmetryScale",
-                        "horizontalSmear",    "verticalSharpness",  "fieldCurvature",
-                        "catEyeStrength",     "bokehVignette",      "edgeCompression",
+                        "lateralCA",          "lateralCAPixelScale",  "longitudinalCA",
+                        "edgeOnlyCA",         "ovalVignette",         "vignetteAsymmetry",
+                        "cornerBias",         "ovalVignetteScale",    "vignetteAsymmetryScale",
+                        "horizontalSmear",    "verticalSharpness",    "fieldCurvature",
+                        "catEyeStrength",     "bokehVignette",        "edgeCompression",
                         "catEyeDimScale",     "bokehVignetteDimScale", "edgeCompressionScale",
                         "centerVeilScale"};
   for (const char *name : edge) {
-    setParamParent(paramSet, name, "edgeGroup");
+    addPageChild(paramSet, "edgePage", name);
   }
 
   const char *framing[] = {"guidesEnabled",       "outputAspect",       "customOutputAspect",
                            "safeArea",            "letterboxPreview",   "letterboxOpacity",
                            "guideAspectStrength", "guideSafeStrength",  "autoEdgeCrop"};
   for (const char *name : framing) {
-    setParamParent(paramSet, name, "framingGroup");
+    addPageChild(paramSet, "framingPage", name);
   }
 
   return kOfxStatOK;

@@ -83,6 +83,19 @@ void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *lab
   gPropertySuite->propSetInt(props, kOfxParamPropGroupOpen, 0, open);
 }
 
+void addPageParam(OfxParamSetHandle paramSet, const char *name, const char *label) {
+  if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {
+    return;
+  }
+
+  OfxPropertySetHandle props = nullptr;
+  if (gParameterSuite->paramDefine(paramSet, kOfxParamTypePage, name, &props) != kOfxStatOK || !props) {
+    return;
+  }
+
+  gPropertySuite->propSetString(props, kOfxPropLabel, 0, label);
+}
+
 void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *label, int defaultValue,
                     std::initializer_list<const char *> options, const char *hint) {
   if (!paramSet || !name || !label || options.size() < 2 || !gParameterSuite || !gPropertySuite) {
@@ -134,6 +147,22 @@ void setParamParent(OfxParamSetHandle paramSet, const char *name, const char *pa
   OfxPropertySetHandle props = nullptr;
   if (gParameterSuite->paramGetHandle(paramSet, name, &handle, &props) == kOfxStatOK && props) {
     gPropertySuite->propSetString(props, kOfxParamPropParent, 0, parent);
+  }
+}
+
+void addPageChild(OfxParamSetHandle paramSet, const char *pageName, const char *childName) {
+  if (!paramSet || !pageName || !childName || !gParameterSuite || !gPropertySuite) {
+    return;
+  }
+
+  OfxParamHandle handle = nullptr;
+  OfxPropertySetHandle props = nullptr;
+  if (gParameterSuite->paramGetHandle(paramSet, pageName, &handle, &props) == kOfxStatOK && props) {
+    int childCount = 0;
+    if (gPropertySuite->propGetDimension(props, kOfxParamPropPageChild, &childCount) != kOfxStatOK) {
+      childCount = 0;
+    }
+    gPropertySuite->propSetString(props, kOfxParamPropPageChild, childCount, childName);
   }
 }
 
