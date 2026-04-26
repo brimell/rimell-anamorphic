@@ -37,6 +37,7 @@ endif()
 set(OFX_PLUGIN_INSTALL_DIR "${DEFAULT_OFX_INSTALL_DIR}" CACHE PATH "OFX plugin install directory")
 set(OFX_BUNDLE_ROOT "${CMAKE_BINARY_DIR}/${OFX_BUNDLE_NAME}")
 set(OFX_CONTENTS_DIR "${OFX_BUNDLE_ROOT}/Contents")
+set(OFX_RESOURCES_DIR "${OFX_CONTENTS_DIR}/Resources")
 set(OFX_BINARY_DIR "${OFX_CONTENTS_DIR}/${OFX_ARCH_DIR}")
 
 add_library(${OFX_PLUGIN_NAME} MODULE
@@ -60,6 +61,21 @@ if(APPLE)
     "-framework Foundation"
     "-framework QuartzCore"
   )
+
+  set(RIMELL_METAL_AIR "${CMAKE_CURRENT_BINARY_DIR}/RimellKernels.air")
+  set(RIMELL_METALLIB "${OFX_RESOURCES_DIR}/RimellKernels.metallib")
+
+  add_custom_command(
+    OUTPUT "${RIMELL_METALLIB}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${OFX_RESOURCES_DIR}"
+    COMMAND xcrun -sdk macosx metal -c "${CMAKE_CURRENT_SOURCE_DIR}/src/RimellKernels.metal" -o "${RIMELL_METAL_AIR}"
+    COMMAND xcrun -sdk macosx metallib "${RIMELL_METAL_AIR}" -o "${RIMELL_METALLIB}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/RimellKernels.metal"
+    VERBATIM
+  )
+
+  add_custom_target(rimell_metallib ALL DEPENDS "${RIMELL_METALLIB}")
+  add_dependencies(${OFX_PLUGIN_NAME} rimell_metallib)
 endif()
 
 target_include_directories(${OFX_PLUGIN_NAME} PRIVATE

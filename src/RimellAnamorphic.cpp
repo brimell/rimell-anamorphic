@@ -2,6 +2,7 @@
 #include "Describe.h"
 #include "Diagnostics.h"
 #include "HostSuites.h"
+#include "MetalRender.h"
 #include "Render.h"
 
 #include "ofxCore.h"
@@ -70,6 +71,7 @@ OfxStatus pluginMain(const char *action, const void *handle, OfxPropertySetHandl
     }
     if (std::strcmp(action, kOfxActionUnload) == 0) {
       stage = "unload";
+      clearMetalPipelineCaches();
       gEffectSuite = nullptr;
       gPropertySuite = nullptr;
       gParameterSuite = nullptr;
