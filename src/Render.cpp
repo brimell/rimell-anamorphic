@@ -37,6 +37,16 @@ constexpr unsigned int kMaxCpuRenderWorkers = 8;
 
 struct InstanceData {};
 
+const char *imageStorageName(ImageStorage storage) {
+  switch (storage) {
+  case ImageStorage::Cpu:
+    return "cpu";
+  case ImageStorage::Metal:
+    return "metal";
+  }
+  return "unknown";
+}
+
 void readIntProperty(OfxPropertySetHandle properties, const char *name, int *value) {
   if (!properties || !name || !value || !gPropertySuite) {
     return;
@@ -71,7 +81,10 @@ Pixel warpedSourceSample(const Image &source, float dstX, float dstY, int width,
   return sampleBilinear<T>(source, sourcePixel.x, sourcePixel.y);
 }
 
-bool validateImageLayout(const Image &image, int bytesPerPixel) {
+bool validateCpuImageLayout(const Image &image, int bytesPerPixel) {
+  if (image.storage != ImageStorage::Cpu) {
+    return false;
+  }
   const int width = image.bounds.x2 - image.bounds.x1;
   const int height = image.bounds.y2 - image.bounds.y1;
   if (!image.data || image.rowBytes == 0 || width <= 0 || height <= 0 || bytesPerPixel <= 0) {
@@ -83,6 +96,16 @@ bool validateImageLayout(const Image &image, int bytesPerPixel) {
   return static_cast<long long>(absRowBytes) >= required;
 }
 
+bool validateMetalImageLayout(const Image &image) {
+  if (image.storage != ImageStorage::Metal) {
+    return false;
+  }
+
+  const int width = image.bounds.x2 - image.bounds.x1;
+  const int height = image.bounds.y2 - image.bounds.y1;
+  return image.data && image.rowBytes > 0 && width > 0 && height > 0;
+}
+
 void logImageLayout(LogLevel level, const char *scope, const char *name, const Image &image,
                     int bytesPerPixel, bool valid) {
   const int width = image.bounds.x2 - image.bounds.x1;
@@ -91,8 +114,9 @@ void logImageLayout(LogLevel level, const char *scope, const char *name, const I
   const long long required = static_cast<long long>(width) * static_cast<long long>(bytesPerPixel);
   logPrintf(level,
             scope,
-            "%s layout valid=%d data=%p bounds=[%d,%d,%d,%d] size=%dx%d rowBytes=%d absRowBytes=%d bpp=%d minRowBytes=%lld",
+            "%s layout storage=%s valid=%d data=%p bounds=[%d,%d,%d,%d] size=%dx%d rowBytes=%d absRowBytes=%d bpp=%d minRowBytes=%lld",
             name ? name : "image",
+            imageStorageName(image.storage),
             valid ? 1 : 0,
             image.data,
             image.bounds.x1,
@@ -474,18 +498,22 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
   const auto started = std::chrono::steady_clock::now();
   std::atomic<std::uint64_t> pixelsWritten{0};
   std::atomic<bool> aborted{false};
+  const int renderWidth = renderWindow.x2 - renderWindow.x1;
   const int renderHeight = renderWindow.y2 - renderWindow.y1;
   const unsigned int availableWorkers =
       std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 1u;
-  const unsigned int workerCount = std::max(
-      1u,
-      std::min<unsigned int>({availableWorkers, kMaxCpuRenderWorkers,
-                              static_cast<unsigned int>(std::max(1, renderHeight))}));
+  const bool enableWorkerPool = !debugEnabled && renderWidth >= 1024 && renderHeight >= 720;
+  const unsigned int workerCount = enableWorkerPool
+                                       ? std::max(1u,
+                                                  std::min<unsigned int>({availableWorkers, kMaxCpuRenderWorkers,
+                                                                          static_cast<unsigned int>(std::max(1, renderHeight))}))
+                                       : 1u;
   logPrintf(LogLevel::Debug,
             "render.cpu",
-            "enter renderTyped pixelType=%s workers=%u sourceData=%p sourceRowBytes=%d sourceBounds=[%d,%d,%d,%d] outputData=%p outputRowBytes=%d outputBounds=[%d,%d,%d,%d]",
+            "enter renderTyped pixelType=%s workers=%u workerPool=%d sourceData=%p sourceRowBytes=%d sourceBounds=[%d,%d,%d,%d] outputData=%p outputRowBytes=%d outputBounds=[%d,%d,%d,%d]",
             pixelTag ? pixelTag : "unknown",
             workerCount,
+            enableWorkerPool ? 1 : 0,
             source.data,
             source.rowBytes,
             source.bounds.x1,
@@ -530,7 +558,9 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
 
         if (debugEnabled) {
           Pixel debugColor = original;
-          if (debugView == DebugView::HighlightMatte) {
+          if (debugView == DebugView::Source) {
+            debugColor = original;
+          } else if (debugView == DebugView::HighlightMatte) {
             const Pixel mapped =
                 mappedSample<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, params);
             const float h = highlightMatteAt(mapped, params);
@@ -636,13 +666,15 @@ void fillEmptyTyped(const Image &output, const OfxRectI &renderWindow) {
   }
 }
 
-bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *imageHandle, Image *image) {
+bool fetchImage(OfxImageClipHandle clip, OfxTime time, ImageStorage storage,
+                OfxPropertySetHandle *imageHandle, Image *image) {
   if (!clip || !imageHandle || !image) {
     return false;
   }
 
   *imageHandle = nullptr;
   *image = {};
+  image->storage = storage;
 
   if (gEffectSuite->clipGetImage(clip, time, nullptr, imageHandle) != kOfxStatOK || !*imageHandle) {
     return false;
@@ -664,6 +696,8 @@ bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *ima
     return false;
   }
 
+  image->storage = storage;
+
   return true;
 }
 
@@ -682,27 +716,10 @@ std::string clipPropertyName(const char *prefix, const char *clipName) {
   return name;
 }
 
-bool metalEnabled(OfxPropertySetHandle inArgs, void **commandQueue) {
-#ifdef __APPLE__
-  int enabled = 0;
-  if (!inArgs || !commandQueue ||
-      gPropertySuite->propGetInt(inArgs, kOfxImageEffectPropMetalEnabled, 0, &enabled) != kOfxStatOK ||
-      enabled == 0) {
-    return false;
-  }
-  return gPropertySuite->propGetPointer(inArgs, kOfxImageEffectPropMetalCommandQueue, 0, commandQueue) ==
-             kOfxStatOK &&
-         *commandQueue != nullptr;
-#else
-  (void)inArgs;
-  (void)commandQueue;
-  return false;
-#endif
-}
-
-float roiPaddingPixels(const RenderParams &params) {
+float roiPaddingPixels(const RenderParams &params, float referenceExtent) {
+  const float extent = std::max(1.0f, referenceExtent);
   const float flarePadding = params.flareIntensity > 0.001f
-                                 ? params.flareLength * params.flareSpanScale * lensIdentityFlareScale(params) * 512.0f
+                                 ? params.flareLength * params.flareSpanScale * lensIdentityFlareScale(params) * extent
                                  : 0.0f;
   const float bloomPadding = (params.veil > 0.001f || params.highlightCream > 0.001f)
                                  ? params.bloomRadius * params.bloomPixelScale * lensIdentityBloomScale(params)
@@ -711,6 +728,36 @@ float roiPaddingPixels(const RenderParams &params) {
                                      (params.tangentialSmear + params.horizontalSmear) * params.smearPixels);
   const float chromaticPadding = params.lateralCA * params.lateralCAPixelScale + params.longitudinalCA * 3.0f;
   return std::max({flarePadding, bloomPadding, edgePadding, chromaticPadding, 2.0f});
+}
+
+bool canUseMetalForThisRender(const RenderParams &params, bool hostMetal, bool hasSource,
+                              const Image &source, const Image &output, const char *sourceBitDepth,
+                              const char *sourceComponents, const char *outputBitDepth,
+                              const char *outputComponents, void *commandQueue) {
+  if (!hostMetal || !hasSource || !commandQueue || !sourceBitDepth || !sourceComponents ||
+      !outputBitDepth || !outputComponents) {
+    return false;
+  }
+
+  if (params.processingBackend == kBackendCpu) {
+    return false;
+  }
+
+  if (params.debugView != static_cast<int>(DebugView::Off) || params.mix <= 0.0001f) {
+    return false;
+  }
+
+  if (source.storage != ImageStorage::Metal || output.storage != ImageStorage::Metal) {
+    return false;
+  }
+
+  if (!stringsMatch(sourceBitDepth, kOfxBitDepthFloat) || !stringsMatch(outputBitDepth, kOfxBitDepthFloat) ||
+      !stringsMatch(sourceComponents, kOfxImageComponentRGBA) ||
+      !stringsMatch(outputComponents, kOfxImageComponentRGBA)) {
+    return false;
+  }
+
+  return validateMetalImageLayout(source) && validateMetalImageLayout(output);
 }
 
 } // namespace
@@ -805,10 +852,12 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
   Image source{};
   Image output{};
   OfxStatus status = kOfxStatOK;
+  const bool hostMetal = hostMetalEnabledInt != 0 && hostMetalQueue != nullptr;
 
   try {
     stage = "fetch_output";
-    if (!fetchImage(outputClip, time, &outputImageHandle, &output)) {
+    if (!fetchImage(outputClip, time, hostMetal ? ImageStorage::Metal : ImageStorage::Cpu, &outputImageHandle,
+                    &output)) {
       status = gEffectSuite->abort(instance) ? kOfxStatOK : kOfxStatFailed;
       logPrintf(LogLevel::Error,
                 "render",
@@ -826,7 +875,9 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
         logMessage(LogLevel::Error, "render", "unsupported output format/components");
       } else {
         stage = "fetch_source";
-        const bool hasSource = fetchImage(sourceClip, time, &sourceImageHandle, &source);
+        const bool hasSource =
+            fetchImage(sourceClip, time, hostMetal ? ImageStorage::Metal : ImageStorage::Cpu, &sourceImageHandle,
+                       &source);
         char *sourceBitDepth = nullptr;
         char *sourceComponents = nullptr;
         if (hasSource &&
@@ -842,8 +893,14 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                                     : (std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0)
                                           ? static_cast<int>(sizeof(OfxRGBAColourS))
                                           : static_cast<int>(sizeof(OfxRGBAColourF));
-          const bool sourceLayoutValid = hasSource ? validateImageLayout(source, sourceBpp) : true;
-          const bool outputLayoutValid = validateImageLayout(output, sourceBpp);
+          const bool sourceLayoutValid = hasSource
+                                             ? (source.storage == ImageStorage::Metal
+                                                    ? validateMetalImageLayout(source)
+                                                    : validateCpuImageLayout(source, sourceBpp))
+                                             : true;
+          const bool outputLayoutValid = output.storage == ImageStorage::Metal
+                                             ? validateMetalImageLayout(output)
+                                             : validateCpuImageLayout(output, sourceBpp);
           if (!sourceLayoutValid || !outputLayoutValid) {
             if (hasSource) {
               logImageLayout(LogLevel::Error, "render", "source", source, sourceBpp, sourceLayoutValid);
@@ -869,29 +926,36 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 params.edgeCropScale = automaticEdgeCropScale(source, source.bounds.x2 - source.bounds.x1,
                                                              source.bounds.y2 - source.bounds.y1, params);
               }
-              void *metalCommandQueue = nullptr;
-              const bool useMetal = hasSource && metalEnabled(inArgs, &metalCommandQueue);
+              void *metalCommandQueue = hostMetalQueue;
+              const bool useMetal = canUseMetalForThisRender(params,
+                                                            hostMetal,
+                                                            hasSource,
+                                                            source,
+                                                            output,
+                                                            sourceBitDepth,
+                                                            sourceComponents,
+                                                            outputBitDepth,
+                                                            outputComponents,
+                                                            metalCommandQueue);
               logPrintf(LogLevel::Info,
                         "render",
-                        "render path source=%d metal=%d outputBitDepth=%s",
+                        "render path source=%d sourceStorage=%s outputStorage=%s backend=%s metal=%d outputBitDepth=%s",
                         hasSource ? 1 : 0,
+                        imageStorageName(source.storage),
+                        imageStorageName(output.storage),
+                        processingBackendName(params.processingBackend),
                         useMetal ? 1 : 0,
                         outputBitDepth ? outputBitDepth : "(null)");
-              if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
+              if (useMetal) {
                 ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalFloat");
                 timer.setResult("in_progress");
                 status = renderMetalFloat(metalCommandQueue, source, output, renderWindow, params);
                 timer.setResult(ofxStatusToString(status));
-              } else if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0) {
-                ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalShort");
-                timer.setResult("in_progress");
-                status = renderMetalShort(metalCommandQueue, source, output, renderWindow, params);
-                timer.setResult(ofxStatusToString(status));
-              } else if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
-                ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalByte");
-                timer.setResult("in_progress");
-                status = renderMetalByte(metalCommandQueue, source, output, renderWindow, params);
-                timer.setResult(ofxStatusToString(status));
+              } else if (hostMetal) {
+                status = kOfxStatGPURenderFailed;
+                logMessage(LogLevel::Error,
+                           "render",
+                           "Metal-enabled images were fetched but the backend gate rejected Metal for this render");
               } else if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
                 if (hasSource) {
                   logPrintf(LogLevel::Debug,
@@ -934,6 +998,11 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
               } else {
                 status = kOfxStatErrUnsupported;
                 logMessage(LogLevel::Error, "render", "unsupported output bit depth");
+              }
+              if (status == kOfxStatGPURenderFailed) {
+                logMessage(LogLevel::Warn,
+                           "render",
+                           "Metal render failed; this render will not fall back to CPU because the fetched images may be Metal buffers");
               }
             }
           }
@@ -1018,7 +1087,8 @@ OfxStatus getRegionsOfInterest(OfxImageEffectHandle instance, OfxPropertySetHand
   }
 
   const RenderParams params = readParams(instance);
-  const double padding = static_cast<double>(roiPaddingPixels(params));
+  const double referenceExtent = std::max(std::abs(roi[2] - roi[0]), std::abs(roi[3] - roi[1]));
+  const double padding = static_cast<double>(roiPaddingPixels(params, static_cast<float>(referenceExtent)));
   roi[0] -= padding;
   roi[1] -= padding;
   roi[2] += padding;
@@ -1030,17 +1100,29 @@ OfxStatus getRegionsOfInterest(OfxImageEffectHandle instance, OfxPropertySetHand
   return kOfxStatOK;
 }
 
-OfxStatus getClipPreferences(OfxImageEffectHandle /*instance*/, OfxPropertySetHandle outArgs) {
+OfxStatus getClipPreferences(OfxImageEffectHandle instance, OfxPropertySetHandle outArgs) {
   if (!outArgs) {
     return kOfxStatReplyDefault;
   }
 
+  const RenderParams params = readParams(instance);
+  const bool preferFloat = params.processingBackend != kBackendCpu;
+
+  // OFX clip preference properties are clip-name suffixed by design.
   const std::string outputComponents =
       clipPropertyName("OfxImageClipPropComponents_", kOfxImageEffectOutputClipName);
   const std::string sourceComponents =
       clipPropertyName("OfxImageClipPropComponents_", kOfxImageEffectSimpleSourceClipName);
   gPropertySuite->propSetString(outArgs, outputComponents.c_str(), 0, kOfxImageComponentRGBA);
   gPropertySuite->propSetString(outArgs, sourceComponents.c_str(), 0, kOfxImageComponentRGBA);
+  if (preferFloat) {
+    const std::string outputDepth =
+        clipPropertyName("OfxImageClipPropDepth_", kOfxImageEffectOutputClipName);
+    const std::string sourceDepth =
+        clipPropertyName("OfxImageClipPropDepth_", kOfxImageEffectSimpleSourceClipName);
+    gPropertySuite->propSetString(outArgs, outputDepth.c_str(), 0, kOfxBitDepthFloat);
+    gPropertySuite->propSetString(outArgs, sourceDepth.c_str(), 0, kOfxBitDepthFloat);
+  }
   gPropertySuite->propSetString(outArgs, kOfxImageEffectPropPreMultiplication, 0,
                                 kOfxImageUnPreMultiplied);
   gPropertySuite->propSetInt(outArgs, kOfxImageClipPropContinuousSamples, 0, 0);

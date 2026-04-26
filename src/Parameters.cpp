@@ -68,8 +68,9 @@ RenderParams readParams(OfxImageEffectHandle effect) {
 
   RenderParams params;
   params.mix = static_cast<float>(getDoubleParam(paramSet, "mix", params.mix));
-    params.debugView = getIntParam(paramSet, "debugView", params.debugView);
+  params.debugView = getIntParam(paramSet, "debugView", params.debugView);
   params.renderQuality = getIntParam(paramSet, "renderQuality", params.renderQuality);
+  params.processingBackend = getIntParam(paramSet, "processingBackend", params.processingBackend);
   params.lookPreset = getIntParam(paramSet, "lookPreset", params.lookPreset);
   params.inputMode = getIntParam(paramSet, "inputMode", params.inputMode);
   params.squeezeMode = getIntParam(paramSet, "squeezeMode", params.squeezeMode);
@@ -212,6 +213,19 @@ RenderParams readParams(OfxImageEffectHandle effect) {
   params.autoEdgeCrop = getIntParam(paramSet, "autoEdgeCrop", params.autoEdgeCrop);
 
   return normalizeRenderParams(params);
+}
+
+const char *processingBackendName(int backend) {
+  switch (backend) {
+  case kBackendCpu:
+    return "cpu";
+  case kBackendAuto:
+    return "auto";
+  case kBackendMetalExperimental:
+    return "metal_experimental";
+  default:
+    return "unknown";
+  }
 }
 
 } // namespace rimell

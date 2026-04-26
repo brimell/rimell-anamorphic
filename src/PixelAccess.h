@@ -10,7 +10,8 @@ namespace rimell {
 
 template <typename T>
 T *pixelAddress(const Image &image, int x, int y) {
-  if (!image.data || image.rowBytes <= 0 || x < image.bounds.x1 || x >= image.bounds.x2 ||
+  if (image.storage != ImageStorage::Cpu || !image.data || image.rowBytes <= 0 ||
+      x < image.bounds.x1 || x >= image.bounds.x2 ||
       y < image.bounds.y1 || y >= image.bounds.y2) {
     return nullptr;
   }
@@ -77,7 +78,8 @@ inline void writePixelTyped<OfxRGBAColourF>(OfxRGBAColourF *pixel, const Pixel &
 
 template <typename T>
 Pixel sampleNearest(const Image &image, float x, float y) {
-  if (!image.data || image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2 ||
+  if (image.storage != ImageStorage::Cpu || !image.data ||
+      image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2 ||
       !std::isfinite(x) || !std::isfinite(y)) {
     return {};
   }
@@ -89,7 +91,8 @@ Pixel sampleNearest(const Image &image, float x, float y) {
 
 template <typename T>
 Pixel sampleBilinear(const Image &image, float x, float y) {
-  if (!image.data || image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2 ||
+  if (image.storage != ImageStorage::Cpu || !image.data ||
+      image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2 ||
       !std::isfinite(x) || !std::isfinite(y)) {
     return {};
   }

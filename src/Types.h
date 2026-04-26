@@ -4,6 +4,17 @@
 
 namespace rimell {
 
+enum ProcessingBackend {
+  kBackendCpu = 0,
+  kBackendAuto = 1,
+  kBackendMetalExperimental = 2,
+};
+
+enum class ImageStorage {
+  Cpu,
+  Metal,
+};
+
 struct Vec3 {
   float r = 0.0f;
   float g = 0.0f;
@@ -21,6 +32,7 @@ struct Image {
   void *data = nullptr;
   OfxRectI bounds{};
   int rowBytes = 0;
+  ImageStorage storage = ImageStorage::Cpu;
 };
 
 struct Vec2 {
@@ -32,6 +44,7 @@ struct RenderParams {
   float mix = 1.0f;
   int debugView = 0;
   int renderQuality = 1;
+  int processingBackend = kBackendCpu;
   int lookPreset = 0;
   int inputMode = 0;
   int squeezeMode = 0;

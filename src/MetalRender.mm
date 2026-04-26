@@ -727,7 +727,9 @@ kernel void RimellAnamorphicKernel(const device PixelChannel* src [[buffer(0)]],
 
   if (p.debugView != 0) {
     float4 debugColor = original;
-    if (p.debugView == 2) {
+    if (p.debugView == 1) {
+      debugColor = original;
+    } else if (p.debugView == 2) {
       float h = highlightAt(src, info, p, float(x), float(y), p.flareThreshold);
       debugColor = float4(h, h, h, 1.0f);
     } else if (p.debugView == 3) {
@@ -1077,16 +1079,6 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
 OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image &output,
                            const OfxRectI &renderWindow, const RenderParams &params) {
   return renderMetalTyped(commandQueue, source, output, renderWindow, params, MetalPixelFormat::Float);
-}
-
-OfxStatus renderMetalShort(void *commandQueue, const Image &source, const Image &output,
-                           const OfxRectI &renderWindow, const RenderParams &params) {
-  return renderMetalTyped(commandQueue, source, output, renderWindow, params, MetalPixelFormat::Short);
-}
-
-OfxStatus renderMetalByte(void *commandQueue, const Image &source, const Image &output,
-                          const OfxRectI &renderWindow, const RenderParams &params) {
-  return renderMetalTyped(commandQueue, source, output, renderWindow, params, MetalPixelFormat::Byte);
 }
 
 OfxStatus renderMetalCopy(void *commandQueue, const Image &source, const Image &output,
