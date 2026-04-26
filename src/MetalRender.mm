@@ -573,16 +573,14 @@ kernel void RimellAnamorphicKernel(const device float* src [[buffer(0)]], device
   if (x >= info.renderX2 || y >= info.renderY2) return;
   int outIndex = (y - info.outputY1) * info.outputRowFloats + (x - info.outputX1) * 4;
   float4 original = sampleNearest(src, info, float(x), float(y));
-  if (p.mix <= 0.0001f) {
-    dst[outIndex] = original.x; dst[outIndex + 1] = original.y; dst[outIndex + 2] = original.z; dst[outIndex + 3] = original.w; return;
-  }
-  float4 color = opticalBaseSample(src, info, p, float(x), float(y));
-  color = edgeCharacter(src, info, p, float(x), float(y), color);
-  color.xyz += lensAdditives(src, info, p, float(x), float(y), color).xyz;
-  color = applyVignetteAndGuides(color, float(x - info.sourceX1), float(y - info.sourceY1), info, p);
-  color.w = original.w;
-  color = lerp4(original, color, clamp01(p.mix));
-  dst[outIndex] = color.x; dst[outIndex + 1] = color.y; dst[outIndex + 2] = color.z; dst[outIndex + 3] = color.w;
+  float amount = clamp01(p.mix);
+  float luma = luminance(original);
+  float3 grey = float3(luma, luma, luma);
+  float3 outRgb = mix(original.xyz, grey, amount);
+  dst[outIndex] = outRgb.x;
+  dst[outIndex + 1] = outRgb.y;
+  dst[outIndex + 2] = outRgb.z;
+  dst[outIndex + 3] = original.w;
 }
 )metal";
 
