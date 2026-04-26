@@ -452,8 +452,11 @@ void applyEdgeSmearExperimental(RenderParams &params) {
 
 void applyGeometryOnly(RenderParams &params) {
   resetLookControls(params);
+  params.mix = 1.0f;
   params.inputMode = 0;
   params.squeezeMode = 0;
+  params.guidesEnabled = 0;
+  params.letterboxPreview = 0;
   params.lensIdentity = 2;
   params.squeezeRatio = 2.0f;
   params.anamorphicTransfer = 1.0f;
@@ -464,20 +467,52 @@ void applyGeometryOnly(RenderParams &params) {
   params.mustache = 0.02f;
   params.bokehStretch = 0.0f;
   params.bokehEdgeFalloff = 0.0f;
+  params.bokehStretchScale = 0.0f;
+  params.bloomPixelScale = 0.0f;
+  params.bloomThresholdScale = 0.0f;
+  params.bloomRings = 1;
+  params.bloomSamplesPerRing = 3;
+  params.bloomEdgeKeepScale = 0.0f;
+  params.bloomVeilScale = 0.0f;
+  params.bloomCreamScale = 0.0f;
   params.edgeBlur = 0.0f;
   params.tangentialSmear = 0.0f;
+  params.radialFalloff = 1.0f;
+  params.edgeBlurPixels = 0.0f;
+  params.fieldCurvaturePixels = 0.0f;
+  params.smearPixels = 0.0f;
   params.horizontalSmear = 0.0f;
+  params.verticalSharpness = 0.0f;
+  params.fieldCurvature = 0.0f;
   params.lateralCA = 0.0f;
   params.longitudinalCA = 0.0f;
+  params.edgeOnlyCA = 0.0f;
+  params.lateralCAPixelScale = 0.0f;
   params.veil = 0.0f;
   params.bloomRadius = 0.0f;
   params.highlightCream = 0.0f;
+  params.blackLiftProtection = 1.0f;
   params.flareIntensity = 0.0f;
+  params.flareLength = 0.0f;
+  params.flareStepDensity = 0.0f;
+  params.flareSpanScale = 0.0f;
+  params.flareFalloff = 0.0f;
   params.ghostCount = 0;
+  params.ghostSpread = 0.0f;
+  params.ghostIntensity = 0.0f;
+  params.coatingWarmResponse = 0.0f;
+  params.coatingCoolResponse = 0.0f;
   params.ovalVignette = 0.0f;
+  params.vignetteAsymmetry = 0.0f;
+  params.cornerBias = 0.0f;
+  params.ovalVignetteScale = 0.0f;
+  params.vignetteAsymmetryScale = 0.0f;
   params.catEyeStrength = 0.0f;
   params.bokehVignette = 0.0f;
-  params.edgeCompressionScale = 0.08f;
+  params.catEyeDimScale = 0.0f;
+  params.bokehVignetteDimScale = 0.0f;
+  params.centerVeilScale = 0.0f;
+  params.edgeCompressionScale = 0.0f;
 }
 
 void applyFlareOnlyControlled(RenderParams &params) {
