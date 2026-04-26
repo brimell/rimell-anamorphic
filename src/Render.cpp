@@ -1199,6 +1199,19 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 params.edgeCropScale = automaticEdgeCropScale(source, source.bounds.x2 - source.bounds.x1,
                                                              source.bounds.y2 - source.bounds.y1, params);
               }
+              const bool sourceFloatRgba = stringsMatch(sourceBitDepth, kOfxBitDepthFloat) &&
+                                           stringsMatch(sourceComponents, kOfxImageComponentRGBA);
+              const bool outputFloatRgba = stringsMatch(outputBitDepth, kOfxBitDepthFloat) &&
+                                           stringsMatch(outputComponents, kOfxImageComponentRGBA);
+              const bool depthAvailable = hasDepth;
+              const bool metalEligible = !depthAvailable &&
+                                         sourceFloatRgba &&
+                                         outputFloatRgba &&
+                                         metalState.sourceIsMetal &&
+                                         metalState.outputIsMetal &&
+                                         metalState.hasMetalQueue &&
+                                         metalState.queuePtr != nullptr;
+              const bool useMetalCopy = metalEligible && params.mix <= 0.0001f;
               const bool depthUsedForProcessing = hasDepth &&
                                                   (params.depthMapEnabled != 0 ||
                                                    params.previewDepthMap != 0 ||
@@ -1206,14 +1219,15 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                                                    params.debugView == static_cast<int>(DebugView::DepthNormalised) ||
                                                    params.debugView == static_cast<int>(DebugView::DepthFocusMask) ||
                                                    params.debugView == static_cast<int>(DebugView::DepthDefocusRadius));
-              const bool useMetal = false;
+              const bool useMetal = useMetalCopy;
               logPrintf(LogLevel::Info,
                         "render",
-                        "metalQueue=%d sourceMetal=%d outputMetal=%d depthMetal=%d backend=CPU queuePtr=%p",
+                        "metalQueue=%d sourceMetal=%d outputMetal=%d depthMetal=%d backend=%s queuePtr=%p",
                         metalState.hasMetalQueue ? 1 : 0,
                         metalState.sourceIsMetal ? 1 : 0,
                         metalState.outputIsMetal ? 1 : 0,
                         metalState.depthIsMetal ? 1 : 0,
+                        useMetal ? "MetalCopy" : "CPU",
                         metalState.queuePtr);
               logPrintf(LogLevel::Info,
                         "render",
@@ -1224,7 +1238,23 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                         depthClipIsConnected ? 1 : 0,
                         useMetal ? 1 : 0,
                         outputBitDepth ? outputBitDepth : "(null)");
-              if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
+              bool metalCompleted = false;
+              if (useMetalCopy) {
+                status = renderMetalCopy(metalState.queuePtr, source, output, renderWindow);
+                if (status == kOfxStatOK) {
+                  metalCompleted = true;
+                } else {
+                  logPrintf(LogLevel::Warn,
+                            "render",
+                            "metal copy failed status=%s, falling back to CPU",
+                            ofxStatusToString(status));
+                  status = kOfxStatOK;
+                }
+              }
+
+              if (metalCompleted) {
+                // Render completed on Metal copy path.
+              } else if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
                 if (hasSource) {
                   logPrintf(LogLevel::Debug,
                             "render",
