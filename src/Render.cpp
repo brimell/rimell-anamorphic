@@ -61,6 +61,15 @@ void readPointerProperty(OfxPropertySetHandle properties, const char *name, void
   (void)gPropertySuite->propGetPointer(properties, name, 0, value);
 }
 
+OfxTime readTimeProperty(OfxPropertySetHandle properties) {
+  OfxTime time = 0.0;
+  if (!properties || !gPropertySuite) {
+    return time;
+  }
+  (void)gPropertySuite->propGetDouble(properties, kOfxPropTime, 0, &time);
+  return time;
+}
+
 bool metalRuntimeAvailable() {
 #if defined(__APPLE__)
   return true;
@@ -912,7 +921,7 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
 
           if (status == kOfxStatOK) {
             stage = "read_params";
-            RenderParams params = readParams(instance);
+            RenderParams params = readParams(instance, time);
             logPrintf(LogLevel::Debug,
                       "render",
                       "params mix=%.3f quality=%d lensIdentity=%d",
@@ -1039,15 +1048,14 @@ OfxStatus isIdentity(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs,
     return kOfxStatReplyDefault;
   }
 
-  const RenderParams params = readParams(instance);
+  const OfxTime renderTime = readTimeProperty(inArgs);
+  const RenderParams params = readParams(instance, renderTime);
   if (params.mix > 0.0001f) {
     return kOfxStatReplyDefault;
   }
 
-  OfxTime time = 0.0;
-  gPropertySuite->propGetDouble(inArgs, kOfxPropTime, 0, &time);
   gPropertySuite->propSetString(outArgs, kOfxPropName, 0, kOfxImageEffectSimpleSourceClipName);
-  gPropertySuite->propSetDouble(outArgs, kOfxPropTime, 0, time);
+  gPropertySuite->propSetDouble(outArgs, kOfxPropTime, 0, renderTime);
   return kOfxStatOK;
 }
 
@@ -1086,7 +1094,8 @@ OfxStatus getRegionsOfInterest(OfxImageEffectHandle instance, OfxPropertySetHand
     return kOfxStatReplyDefault;
   }
 
-  const RenderParams params = readParams(instance);
+  const OfxTime time = readTimeProperty(inArgs);
+  const RenderParams params = readParams(instance, time);
   const double referenceExtent = std::max(std::abs(roi[2] - roi[0]), std::abs(roi[3] - roi[1]));
   const double padding = static_cast<double>(roiPaddingPixels(params, static_cast<float>(referenceExtent)));
   roi[0] -= padding;

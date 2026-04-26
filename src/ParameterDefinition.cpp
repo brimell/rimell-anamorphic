@@ -157,6 +157,24 @@ void addRGBParam(OfxParamSetHandle paramSet, const char *name, const char *label
   }
 }
 
+void setParamFlags(OfxParamSetHandle paramSet, const char *name, int secret, int enabled, int persistent,
+                   int evaluateOnChange) {
+  if (!paramSet || !name || !gParameterSuite || !gPropertySuite) {
+    return;
+  }
+
+  OfxParamHandle handle = nullptr;
+  OfxPropertySetHandle props = nullptr;
+  if (gParameterSuite->paramGetHandle(paramSet, name, &handle, &props) != kOfxStatOK || !props) {
+    return;
+  }
+
+  gPropertySuite->propSetInt(props, kOfxParamPropSecret, 0, secret);
+  gPropertySuite->propSetInt(props, kOfxParamPropEnabled, 0, enabled);
+  gPropertySuite->propSetInt(props, kOfxParamPropPersistant, 0, persistent);
+  gPropertySuite->propSetInt(props, kOfxParamPropEvaluateOnChange, 0, evaluateOnChange);
+}
+
 void setParamParent(OfxParamSetHandle paramSet, const char *name, const char *parent) {
   if (!paramSet || !name || !parent || !gParameterSuite || !gPropertySuite) {
     return;

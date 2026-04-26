@@ -71,6 +71,9 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                   "Waterfall Bokeh Experimental", "Heavy Mumps Vintage", "Edge Smear Experimental",
                   "Geometry Only", "Flare Only Controlled", "Real Anamorphic Utility", "Debug / Neutral"},
                  "Creative starting points. Clean Scope 1.33x is the default; Manual leaves individual controls unchanged.");
+  addIntParam(paramSet, "schemaVersion", "Schema Version", kCurrentParameterSchemaVersion,
+              kCurrentParameterSchemaVersion, kCurrentParameterSchemaVersion);
+  setParamFlags(paramSet, "schemaVersion", 1, 0, 1, 0);
 
   addChoiceParam(paramSet, "inputMode", "Input Mode", 0,
                  {"Spherical -> Anamorphic Look", "Real Anamorphic Utility", "Creative Warp"},

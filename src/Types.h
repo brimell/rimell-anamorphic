@@ -4,6 +4,8 @@
 
 namespace rimell {
 
+inline constexpr int kCurrentParameterSchemaVersion = 1;
+
 enum ProcessingBackend {
   kBackendCpu = 0,
   kBackendAuto = 1,
@@ -41,6 +43,7 @@ struct Vec2 {
 };
 
 struct RenderParams {
+  int schemaVersion = kCurrentParameterSchemaVersion;
   float mix = 1.0f;
   int debugView = 0;
   int renderQuality = 1;

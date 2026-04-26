@@ -23,6 +23,8 @@ void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *la
                     std::initializer_list<const char *> options, const char *hint = nullptr);
 void addRGBParam(OfxParamSetHandle paramSet, const char *name, const char *label, Vec3 defaultValue,
                  const char *hint = nullptr);
+void setParamFlags(OfxParamSetHandle paramSet, const char *name, int secret, int enabled, int persistent,
+                   int evaluateOnChange);
 void setParamParent(OfxParamSetHandle paramSet, const char *name, const char *parent);
 void addPageChild(OfxParamSetHandle paramSet, const char *pageName, const char *childName);
 
