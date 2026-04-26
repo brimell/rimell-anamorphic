@@ -766,8 +766,8 @@ These presets are exposed as starting points through the normal OFX parameter se
 * Identity optimisation: if Mix is 0, the effect reports source identity
 * ROI expansion is implemented to account for flare, bloom, blur, depth defocus, and CA sampling footprint
 * CPU render path supports 8-bit, 16-bit, and 32-bit float RGBA
-* On Apple builds, a Metal render path is advertised for 32-bit float RGBA when the host supplies an OFX Metal command queue
-* CPU rendering remains the fallback when Metal is unavailable, unsupported by the host, the optional `Depth` input is connected, or the render bit depth is not 32-bit float
+* On Apple builds, the non-depth Metal render path supports 8-bit, 16-bit, and 32-bit float RGBA when the host supplies an OFX Metal command queue
+* CPU rendering remains the fallback when Metal is unavailable, unsupported by the host, or the optional `Depth` input is connected
 
 ---
 

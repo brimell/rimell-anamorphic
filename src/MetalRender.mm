@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 
 namespace rimell {
@@ -136,6 +137,12 @@ struct CopyUniforms {
   int renderY2;
 };
 
+enum class MetalPixelFormat {
+  Byte,
+  Short,
+  Float,
+};
+
 MetalParams packParams(const RenderParams &params) {
   return {
       params.mix,
@@ -237,6 +244,20 @@ const char *kernelSource = R"metal(
 #include <metal_stdlib>
 using namespace metal;
 
+typedef RIMELL_PIXEL_TYPE PixelChannel;
+
+float channelToFloat(PixelChannel v) {
+  return float(v) * RIMELL_PIXEL_SCALE;
+}
+
+PixelChannel floatToChannel(float v) {
+#if RIMELL_PIXEL_IS_FLOAT
+  return v;
+#else
+  return PixelChannel(clamp(v, 0.0f, 1.0f) * RIMELL_PIXEL_MAX + RIMELL_PIXEL_ROUND);
+#endif
+}
+
 struct P {
   float mix; int debugView; int renderQuality; int inputMode; int squeezeMode; float anamorphicTransfer; int lensIdentity;
   float squeezeRatio; float axisWarp; float centerProtection; float edgeCompressionStart; float horizontalFovBoost;
@@ -295,18 +316,21 @@ float lensIdentityFlareScale(constant P& p) { return presetFlareScale(p.lensIden
 float lensIdentityGhostScaleX(constant P& p) { return presetGhostScaleX(p.lensIdentity) * (1.0f + safeSqueezeDelta(p) * 0.12f); }
 float lensIdentityGhostScaleY(constant P& p) { return presetGhostScaleY(p.lensIdentity) / (1.0f + safeSqueezeDelta(p) * 0.06f); }
 
-float4 loadPixel(const device float* src, constant I& info, int x, int y) {
+float4 loadPixel(const device PixelChannel* src, constant I& info, int x, int y) {
   int cx = clamp(x, info.sourceX1, info.sourceX2 - 1) - info.sourceX1;
   int cy = clamp(y, info.sourceY1, info.sourceY2 - 1) - info.sourceY1;
   int idx = cy * info.sourceRowFloats + cx * 4;
-  return float4(src[idx], src[idx + 1], src[idx + 2], src[idx + 3]);
+  return float4(channelToFloat(src[idx]),
+                channelToFloat(src[idx + 1]),
+                channelToFloat(src[idx + 2]),
+                channelToFloat(src[idx + 3]));
 }
 
-float4 sampleNearest(const device float* src, constant I& info, float x, float y) {
+float4 sampleNearest(const device PixelChannel* src, constant I& info, float x, float y) {
   return loadPixel(src, info, int(floor(x + 0.5f)), int(floor(y + 0.5f)));
 }
 
-float4 sampleBilinear(const device float* src, constant I& info, float x, float y) {
+float4 sampleBilinear(const device PixelChannel* src, constant I& info, float x, float y) {
   if (!isfinite(x) || !isfinite(y)) {
     return loadPixel(src, info, info.sourceX1, info.sourceY1);
   }
@@ -395,7 +419,7 @@ float2 applyEdgeCrop(float dstX, float dstY, constant I& info, constant P& p) {
   return float2(cx + (dstX - cx) / scale, cy + (dstY - cy) / scale);
 }
 
-float4 warpedSourceSample(const device float* src, constant I& info, constant P& p, float dstX, float dstY, float caPixels) {
+float4 warpedSourceSample(const device PixelChannel* src, constant I& info, constant P& p, float dstX, float dstY, float caPixels) {
   float2 cropped = applyEdgeCrop(dstX, dstY, info, p);
   LensMap lm = buildLensMap(cropped.x, cropped.y, info, p);
   float2 sp = lensMapToSourcePixel(lm, info);
@@ -406,7 +430,7 @@ float4 warpedSourceSample(const device float* src, constant I& info, constant P&
 
 float qualityScale(constant P& p) { return p.renderQuality == 0 ? 0.5f : (p.renderQuality == 2 ? 1.5f : 1.0f); }
 
-float4 channelDefocusSample(const device float* src, constant I& info, constant P& p, float x, float y, float radiusPixels) {
+float4 channelDefocusSample(const device PixelChannel* src, constant I& info, constant P& p, float x, float y, float radiusPixels) {
   if (radiusPixels <= 0.05f) return warpedSourceSample(src, info, p, x, y, 0.0f);
   float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
   float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
@@ -419,7 +443,7 @@ float4 channelDefocusSample(const device float* src, constant I& info, constant 
   return float4(center.xyz * 0.5f + (outward.xyz + inward.xyz) * 0.25f, center.w);
 }
 
-float4 opticalBaseSample(const device float* src, constant I& info, constant P& p, float x, float y) {
+float4 opticalBaseSample(const device PixelChannel* src, constant I& info, constant P& p, float x, float y) {
   float caPixels = p.lateralCA * p.lateralCAPixelScale;
   float4 base = warpedSourceSample(src, info, p, x, y, 0.0f);
   base.x = warpedSourceSample(src, info, p, x, y, caPixels).x;
@@ -439,7 +463,7 @@ float4 opticalBaseSample(const device float* src, constant I& info, constant P& 
   return base;
 }
 
-float4 edgeCharacter(const device float* src, constant I& info, constant P& p, float x, float y, float4 base) {
+float4 edgeCharacter(const device PixelChannel* src, constant I& info, constant P& p, float x, float y, float4 base) {
   float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
   float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
   float nx = (x - cx) / max(1.0f, float(info.width) * 0.5f);
@@ -493,11 +517,11 @@ float edgeMaskAt(constant I& info, constant P& p, float x, float y) {
   return clamp01(max(lm.edgeMask, smoothstepf(max(0.0f, 1.0f - p.radialFalloff), 1.15f, radius)));
 }
 
-float highlightAt(const device float* src, constant I& info, constant P& p, float x, float y, float threshold) {
+float highlightAt(const device PixelChannel* src, constant I& info, constant P& p, float x, float y, float threshold) {
   return smoothstepf(threshold, 1.0f, luminance(warpedSourceSample(src, info, p, x, y, 0.0f)));
 }
 
-float4 lensAdditives(const device float* src, constant I& info, constant P& p, float x, float y, float4 base) {
+float4 lensAdditives(const device PixelChannel* src, constant I& info, constant P& p, float x, float y, float4 base) {
   float4 add = 0.0f;
   float flareAngle = p.flareAngle * kPi / 180.0f;
   float dirX = cos(flareAngle);
@@ -635,7 +659,7 @@ float4 applyVignetteAndGuides(float4 color, float x, float y, constant I& info, 
   return color;
 }
 
-kernel void RimellAnamorphicKernel(const device float* src [[buffer(0)]], device float* dst [[buffer(1)]],
+kernel void RimellAnamorphicKernel(const device PixelChannel* src [[buffer(0)]], device PixelChannel* dst [[buffer(1)]],
                                    constant P& p [[buffer(2)]], constant I& info [[buffer(3)]],
                                    uint2 gid [[thread_position_in_grid]]) {
   int x = info.renderX1 + int(gid.x);
@@ -656,18 +680,18 @@ kernel void RimellAnamorphicKernel(const device float* src [[buffer(0)]], device
       float e = edgeMaskAt(info, p, float(x), float(y));
       debugColor = float4(e, e, e, 1.0f);
     }
-    dst[outIndex] = debugColor.x;
-    dst[outIndex + 1] = debugColor.y;
-    dst[outIndex + 2] = debugColor.z;
-    dst[outIndex + 3] = debugColor.w;
+    dst[outIndex] = floatToChannel(debugColor.x);
+    dst[outIndex + 1] = floatToChannel(debugColor.y);
+    dst[outIndex + 2] = floatToChannel(debugColor.z);
+    dst[outIndex + 3] = floatToChannel(debugColor.w);
     return;
   }
 
   if (p.mix <= 0.0001f) {
-    dst[outIndex] = original.x;
-    dst[outIndex + 1] = original.y;
-    dst[outIndex + 2] = original.z;
-    dst[outIndex + 3] = original.w;
+    dst[outIndex] = floatToChannel(original.x);
+    dst[outIndex + 1] = floatToChannel(original.y);
+    dst[outIndex + 2] = floatToChannel(original.z);
+    dst[outIndex + 3] = floatToChannel(original.w);
     return;
   }
 
@@ -684,10 +708,10 @@ kernel void RimellAnamorphicKernel(const device float* src [[buffer(0)]], device
                     finiteOr(outPixel.y, original.y),
                     finiteOr(outPixel.z, original.z),
                     original.w);
-  dst[outIndex] = outPixel.x;
-  dst[outIndex + 1] = outPixel.y;
-  dst[outIndex + 2] = outPixel.z;
-  dst[outIndex + 3] = outPixel.w;
+  dst[outIndex] = floatToChannel(outPixel.x);
+  dst[outIndex + 1] = floatToChannel(outPixel.y);
+  dst[outIndex + 2] = floatToChannel(outPixel.z);
+  dst[outIndex + 3] = floatToChannel(outPixel.w);
 }
 )metal";
 
@@ -737,13 +761,80 @@ kernel void rimell_copy(
 )metal";
 
 std::mutex pipelineMutex;
-std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> pipelineCache;
+std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> floatPipelineCache;
+std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> shortPipelineCache;
+std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> bytePipelineCache;
 
 std::mutex copyPipelineMutex;
 std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> copyPipelineCache;
 
-id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue) {
+std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> &pipelineCacheForFormat(
+    MetalPixelFormat format) {
+  switch (format) {
+  case MetalPixelFormat::Byte:
+    return bytePipelineCache;
+  case MetalPixelFormat::Short:
+    return shortPipelineCache;
+  case MetalPixelFormat::Float:
+    return floatPipelineCache;
+  }
+  return floatPipelineCache;
+}
+
+std::string kernelSourceForFormat(MetalPixelFormat format) {
+  switch (format) {
+  case MetalPixelFormat::Byte:
+    return std::string("#define RIMELL_PIXEL_TYPE uchar\n"
+                       "#define RIMELL_PIXEL_SCALE (1.0f / 255.0f)\n"
+                       "#define RIMELL_PIXEL_MAX 255.0f\n"
+                       "#define RIMELL_PIXEL_ROUND 0.5f\n"
+                       "#define RIMELL_PIXEL_IS_FLOAT 0\n") +
+           kernelSource;
+  case MetalPixelFormat::Short:
+    return std::string("#define RIMELL_PIXEL_TYPE ushort\n"
+                       "#define RIMELL_PIXEL_SCALE (1.0f / 65535.0f)\n"
+                       "#define RIMELL_PIXEL_MAX 65535.0f\n"
+                       "#define RIMELL_PIXEL_ROUND 0.5f\n"
+                       "#define RIMELL_PIXEL_IS_FLOAT 0\n") +
+           kernelSource;
+  case MetalPixelFormat::Float:
+    return std::string("#define RIMELL_PIXEL_TYPE float\n"
+                       "#define RIMELL_PIXEL_SCALE 1.0f\n"
+                       "#define RIMELL_PIXEL_MAX 1.0f\n"
+                       "#define RIMELL_PIXEL_ROUND 0.0f\n"
+                       "#define RIMELL_PIXEL_IS_FLOAT 1\n") +
+           kernelSource;
+  }
+  return kernelSource;
+}
+
+int bytesPerChannel(MetalPixelFormat format) {
+  switch (format) {
+  case MetalPixelFormat::Byte:
+    return 1;
+  case MetalPixelFormat::Short:
+    return 2;
+  case MetalPixelFormat::Float:
+    return 4;
+  }
+  return 4;
+}
+
+const char *metalPixelFormatName(MetalPixelFormat format) {
+  switch (format) {
+  case MetalPixelFormat::Byte:
+    return "byte";
+  case MetalPixelFormat::Short:
+    return "short";
+  case MetalPixelFormat::Float:
+    return "float";
+  }
+  return "unknown";
+}
+
+id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue, MetalPixelFormat format) {
   std::lock_guard<std::mutex> lock(pipelineMutex);
+  auto &pipelineCache = pipelineCacheForFormat(format);
   const auto it = pipelineCache.find(queue);
   if (it != pipelineCache.end()) {
     return it->second;
@@ -751,12 +842,14 @@ id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue) {
 
   NSError *error = nil;
   MTLCompileOptions *options = [MTLCompileOptions new];
-  id<MTLLibrary> library = [queue.device newLibraryWithSource:@(kernelSource) options:options error:&error];
+  const std::string source = kernelSourceForFormat(format);
+  id<MTLLibrary> library = [queue.device newLibraryWithSource:@(source.c_str()) options:options error:&error];
   [options release];
   if (!library) {
     logPrintf(LogLevel::Error,
               "render.gpu",
-              "failed to compile metal library error=%s",
+              "failed to compile %s metal library error=%s",
+              metalPixelFormatName(format),
               error ? [[error localizedDescription] UTF8String] : "(none)");
     return nil;
   }
@@ -774,7 +867,8 @@ id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue) {
   if (!pipeline) {
     logPrintf(LogLevel::Error,
               "render.gpu",
-              "failed to build compute pipeline error=%s",
+              "failed to build %s compute pipeline error=%s",
+              metalPixelFormatName(format),
               error ? [[error localizedDescription] UTF8String] : "(none)");
   }
   if (pipeline) {
@@ -824,11 +918,10 @@ id<MTLComputePipelineState> copyPipelineForQueue(id<MTLCommandQueue> queue) {
   return pipeline;
 }
 
-} // namespace
-
-OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image &output,
-                           const OfxRectI &renderWindow, const RenderParams &params) {
-  ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalFloat");
+OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image &output,
+                           const OfxRectI &renderWindow, const RenderParams &params,
+                           MetalPixelFormat format) {
+  ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalTyped");
   timer.setResult("in_progress");
 
   if (!commandQueue || !source.data || !output.data) {
@@ -838,7 +931,7 @@ OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image 
   }
 
   id<MTLCommandQueue> queue = reinterpret_cast<id<MTLCommandQueue>>(commandQueue);
-  id<MTLComputePipelineState> pipeline = pipelineForQueue(queue);
+  id<MTLComputePipelineState> pipeline = pipelineForQueue(queue, format);
   if (!pipeline) {
     timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
     return kOfxStatGPURenderFailed;
@@ -854,7 +947,8 @@ OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image 
 
   logPrintf(LogLevel::Debug,
             "render.gpu",
-            "dispatch source=[%d,%d,%d,%d] output=[%d,%d,%d,%d] window=[%d,%d,%d,%d]",
+            "dispatch pixelType=%s source=[%d,%d,%d,%d] output=[%d,%d,%d,%d] window=[%d,%d,%d,%d]",
+            metalPixelFormatName(format),
             source.bounds.x1,
             source.bounds.y1,
             source.bounds.x2,
@@ -868,6 +962,7 @@ OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image 
             renderWindow.x2,
             renderWindow.y2);
 
+  const int channelBytes = bytesPerChannel(format);
   MetalParams packedParams = packParams(params);
   MetalImageInfo info{
       source.bounds.x1,
@@ -876,8 +971,8 @@ OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image 
       source.bounds.y2,
       output.bounds.x1,
       output.bounds.y1,
-      source.rowBytes / static_cast<int>(sizeof(float)),
-      output.rowBytes / static_cast<int>(sizeof(float)),
+      source.rowBytes / channelBytes,
+      output.rowBytes / channelBytes,
       width,
       height,
       renderWindow.x1,
@@ -916,6 +1011,23 @@ OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image 
   const OfxStatus status = failed ? kOfxStatGPURenderFailed : kOfxStatOK;
   timer.setResult(ofxStatusToString(status));
   return status;
+}
+
+} // namespace
+
+OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image &output,
+                           const OfxRectI &renderWindow, const RenderParams &params) {
+  return renderMetalTyped(commandQueue, source, output, renderWindow, params, MetalPixelFormat::Float);
+}
+
+OfxStatus renderMetalShort(void *commandQueue, const Image &source, const Image &output,
+                           const OfxRectI &renderWindow, const RenderParams &params) {
+  return renderMetalTyped(commandQueue, source, output, renderWindow, params, MetalPixelFormat::Short);
+}
+
+OfxStatus renderMetalByte(void *commandQueue, const Image &source, const Image &output,
+                          const OfxRectI &renderWindow, const RenderParams &params) {
+  return renderMetalTyped(commandQueue, source, output, renderWindow, params, MetalPixelFormat::Byte);
 }
 
 OfxStatus renderMetalCopy(void *commandQueue, const Image &source, const Image &output,

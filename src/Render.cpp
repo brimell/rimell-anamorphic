@@ -1128,9 +1128,16 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 timer.setResult("in_progress");
                 status = renderMetalFloat(metalCommandQueue, source, output, renderWindow, params);
                 timer.setResult(ofxStatusToString(status));
-              } else if (useMetal) {
-                status = kOfxStatGPURenderFailed;
-                logMessage(LogLevel::Error, "render", "metal is enabled but output is not float RGBA");
+              } else if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthShort) == 0) {
+                ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalShort");
+                timer.setResult("in_progress");
+                status = renderMetalShort(metalCommandQueue, source, output, renderWindow, params);
+                timer.setResult(ofxStatusToString(status));
+              } else if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
+                ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalByte");
+                timer.setResult("in_progress");
+                status = renderMetalByte(metalCommandQueue, source, output, renderWindow, params);
+                timer.setResult(ofxStatusToString(status));
               } else if (std::strcmp(outputBitDepth, kOfxBitDepthByte) == 0) {
                 if (hasSource) {
                   logPrintf(LogLevel::Debug,
