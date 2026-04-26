@@ -1042,14 +1042,12 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                                                              source.bounds.y2 - source.bounds.y1, params);
               }
               void *metalCommandQueue = nullptr;
-              const bool useMetal = hasSource && !depthClipIsConnected && !hasDepth &&
-                                    metalEnabled(inArgs, &metalCommandQueue);
+              const bool useMetal = hasSource && !hasDepth && metalEnabled(inArgs, &metalCommandQueue);
               logPrintf(LogLevel::Info,
                         "render",
-                        "render path source=%d depth=%d depthConnected=%d metal=%d outputBitDepth=%s",
+                        "render path source=%d depth=%d metal=%d outputBitDepth=%s",
                         hasSource ? 1 : 0,
                         hasDepth ? 1 : 0,
-                        depthClipIsConnected ? 1 : 0,
                         useMetal ? 1 : 0,
                         outputBitDepth ? outputBitDepth : "(null)");
               if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
