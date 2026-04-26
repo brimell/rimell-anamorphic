@@ -572,7 +572,7 @@ wide framing + axis-specific geometry + edge falloff + oval highlight shaping + 
 
 Rimell Anamorphic is built around a stronger version of the second approach: the geometry, edge behaviour, chromatic aberration, bloom, flare, ghosts, and vignette all reference a shared virtual lens map where practical.
 
-Depth-map input is disabled for now so Apple hosts can stay on the Metal render path.
+Depth-map input is supported on both CPU and Metal render paths, enabling depth-aware focus separation and bokeh.
 
 The plugin still infers lens calibration from controls rather than measured lens profiles, OpenLensIO payloads, or STMaps.
 
@@ -604,7 +604,7 @@ The plugin currently implements the following behaviour:
 * `Debug / Neutral`, a safe baseline for testing and reset
 
 These presets are exposed as starting points through the normal OFX parameter set. The individual controls remain public, so a host project can still keyframe or override the underlying look controls.
-The bokeh-heavy and depth-inspired presets are currently approximated with the existing highlight, edge, and subject-protection controls because depth-map input is still disabled.
+The bokeh-heavy and depth-inspired presets can utilize depth-map input for enhanced focus separation and highlight bloom.
 
 ### 1. Input and geometry mode architecture
 
@@ -714,7 +714,7 @@ The bokeh-heavy and depth-inspired presets are currently approximated with the e
 * Oval highlight behaviour in this workflow is an approximation of anamorphic highlight response, not a physically complete depth-aware bokeh reconstruction.
 * Flare, ghosting, glare, CA, vignette, and blur are image-processing approximations rather than calibrated ray-traced simulations of a measured optical assembly.
 * The plugin does not currently know the real lens, aperture, subject distance, or sensor size unless those values are provided through a future profile layer.
-* External depth-map focus separation is temporarily disabled while the render path is kept Metal-first.
+* External depth-map input is supported for enhanced focus separation on both CPU and Metal render paths.
 * The plugin does not currently import measured OpenLensIO lens payloads, export OpenLensIO profiles, import STMaps, or export STMaps.
 * The profile model is OpenLensIO-informed, not OpenLensIO-complete.
 
