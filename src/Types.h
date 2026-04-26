@@ -37,16 +37,6 @@ struct RenderParams {
   int squeezeMode = 0;
   float anamorphicTransfer = 1.0f;
   int lensIdentity = 1;
-  int depthMapEnabled = 1;
-  int previewDepthMap = 0;
-  int depthMapInvert = 0;
-  float focusDepth = 0.5f;
-  float depthFocusRange = 0.12f;
-  float depthFalloff = 0.1f;
-  float subjectProtection = 1.0f;
-  float depthInfluence = 0.8f;
-  float depthDefocusPixels = 18.0f;
-  float depthBloomBoost = 0.65f;
   float squeezeRatio = 1.33f;
   float axisWarp = 0.0f;
   float centerProtection = 0.65f;

@@ -671,12 +671,10 @@ kernel void RimellAnamorphicKernel(const device PixelChannel* src [[buffer(0)]],
 
   if (p.debugView != 0) {
     float4 debugColor = original;
-    if (p.debugView == 2 || p.debugView == 3) {
-      debugColor = float4(0.0f, 0.0f, 0.0f, 1.0f);
-    } else if (p.debugView == 4) {
+    if (p.debugView == 2) {
       float h = highlightAt(src, info, p, float(x), float(y), p.flareThreshold);
       debugColor = float4(h, h, h, 1.0f);
-    } else if (p.debugView == 5) {
+    } else if (p.debugView == 3) {
       float e = edgeMaskAt(info, p, float(x), float(y));
       debugColor = float4(e, e, e, 1.0f);
     }
@@ -983,6 +981,11 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
 
   id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
   id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+  if (!commandBuffer || !encoder) {
+    logMessage(LogLevel::Error, "render.gpu", "failed to create metal command buffer/encoder");
+    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+    return kOfxStatGPURenderFailed;
+  }
   [encoder setComputePipelineState:pipeline];
   [encoder setBuffer:reinterpret_cast<id<MTLBuffer>>(source.data) offset:0 atIndex:0];
   [encoder setBuffer:reinterpret_cast<id<MTLBuffer>>(output.data) offset:0 atIndex:1];
@@ -999,18 +1002,8 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
   [encoder dispatchThreadgroups:groups threadsPerThreadgroup:threadsPerGroup];
   [encoder endEncoding];
   [commandBuffer commit];
-  [commandBuffer waitUntilCompleted];
-
-  const bool failed = commandBuffer.status == MTLCommandBufferStatusError;
-  if (failed) {
-    logPrintf(LogLevel::Error,
-              "render.gpu",
-              "command buffer failed error=%s",
-              commandBuffer.error ? [[commandBuffer.error localizedDescription] UTF8String] : "(none)");
-  }
-  const OfxStatus status = failed ? kOfxStatGPURenderFailed : kOfxStatOK;
-  timer.setResult(ofxStatusToString(status));
-  return status;
+  timer.setResult(ofxStatusToString(kOfxStatOK));
+  return kOfxStatOK;
 }
 
 } // namespace
@@ -1075,6 +1068,11 @@ OfxStatus renderMetalCopy(void *commandQueue, const Image &source, const Image &
 
   id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
   id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+  if (!commandBuffer || !encoder) {
+    logMessage(LogLevel::Error, "render.gpu", "failed to create metal copy command buffer/encoder");
+    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+    return kOfxStatGPURenderFailed;
+  }
   [encoder setComputePipelineState:pipeline];
   [encoder setBuffer:reinterpret_cast<id<MTLBuffer>>(source.data) offset:0 atIndex:0];
   [encoder setBuffer:reinterpret_cast<id<MTLBuffer>>(output.data) offset:0 atIndex:1];
@@ -1089,18 +1087,8 @@ OfxStatus renderMetalCopy(void *commandQueue, const Image &source, const Image &
   [encoder dispatchThreadgroups:groups threadsPerThreadgroup:threadsPerGroup];
   [encoder endEncoding];
   [commandBuffer commit];
-  [commandBuffer waitUntilCompleted];
-
-  const bool failed = commandBuffer.status == MTLCommandBufferStatusError;
-  if (failed) {
-    logPrintf(LogLevel::Error,
-              "render.gpu",
-              "copy command buffer failed error=%s",
-              commandBuffer.error ? [[commandBuffer.error localizedDescription] UTF8String] : "(none)");
-  }
-  const OfxStatus status = failed ? kOfxStatGPURenderFailed : kOfxStatOK;
-  timer.setResult(ofxStatusToString(status));
-  return status;
+  timer.setResult(ofxStatusToString(kOfxStatOK));
+  return kOfxStatOK;
 }
 
 } // namespace rimell

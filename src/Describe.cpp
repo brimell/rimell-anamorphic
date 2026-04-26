@@ -25,9 +25,11 @@ OfxStatus describe(OfxImageEffectHandle effect) {
                                 kOfxImageEffectRenderFullySafe);
   gPropertySuite->propSetInt(props, kOfxImageEffectPropSupportsTiles, 0, 0);
   gPropertySuite->propSetInt(props, kOfxImageEffectPropTemporalClipAccess, 0, 0);
-  gPropertySuite->propSetString(props, kOfxImageEffectPropCPURenderSupported, 0, "true");
 #if defined(__APPLE__)
-  gPropertySuite->propSetInt(props, kOfxImageEffectPropMetalRenderSupported, 0, 1);
+  gPropertySuite->propSetString(props, kOfxImageEffectPropCPURenderSupported, 0, "false");
+  gPropertySuite->propSetString(props, kOfxImageEffectPropMetalRenderSupported, 0, "true");
+#else
+  gPropertySuite->propSetString(props, kOfxImageEffectPropCPURenderSupported, 0, "true");
 #endif
   return kOfxStatOK;
 }
@@ -41,18 +43,10 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   gEffectSuite->clipDefine(effect, kOfxImageEffectSimpleSourceClipName, &props);
   gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
 
-  gEffectSuite->clipDefine(effect, kDepthClipName, &props);
-  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
-  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 0, kOfxBitDepthByte);
-  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 1, kOfxBitDepthShort);
-  gPropertySuite->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 2, kOfxBitDepthFloat);
-  gPropertySuite->propSetInt(props, kOfxImageClipPropOptional, 0, 1);
-
   OfxParamSetHandle paramSet = nullptr;
   gEffectSuite->getParamSet(effect, &paramSet);
 
   addGroupParam(paramSet, "coreGroup", "Core", 1);
-  addGroupParam(paramSet, "depthGroup", "Depth Map", 1);
   addGroupParam(paramSet, "geometryGroup", "Geometry", 1);
   addGroupParam(paramSet, "highlightGroup", "Highlights / Flares", 0);
   addGroupParam(paramSet, "edgeGroup", "Edge / CA", 0);
@@ -75,8 +69,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addGroupParam(paramSet, "framingLetterboxGroup", "Letterbox + Crop", 0);
 
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
-  addChoiceParam(paramSet, "debugView", "Debug View", 0, "Off", "Source", "Depth Raw",
-                 "Depth Normalised", "Depth Focus Mask", "Depth Defocus Radius");
+  addChoiceParam(paramSet, "debugView", "Debug View", 0, "Off", "Source", "Highlight Matte",
+                 "Edge Mask");
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, "Draft", "Preview", "Final",
                  nullptr, nullptr, "Scales expensive flare, bloom, blur, and chromatic sampling.");
   addChoiceParam(paramSet, "lookPreset", "Look Preset", 0, "Manual", "Subtle Modern",
@@ -94,18 +88,6 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addChoiceParam(paramSet, "lensIdentity", "Lens Identity", 1, "Custom", "Modern 1.33x",
                  "Classic 2x", "Scope Soft Edge", nullptr,
                  "Preset identity used to drive geometry, highlight, flare, and ghost scaling.");
-  addBooleanParam(paramSet, "depthMapEnabled", "Use Depth Map", 1,
-                  "Connect DaVinci Resolve's AI Depth Map output to the Depth input to drive focus-aware bokeh, blur, flares, ghosts, and longitudinal CA.");
-  addBooleanParam(paramSet, "previewDepthMap", "Preview Depth Map", 0,
-                  "Displays the connected depth clip as a grayscale output preview.");
-  addBooleanParam(paramSet, "depthMapInvert", "Invert Depth Map", 0);
-  addDoubleParam(paramSet, "focusDepth", "Focus Depth", 0.5, 0.0, 1.0, 0.0, 1.0);
-  addDoubleParam(paramSet, "depthFocusRange", "Focus Range", 0.12, 0.0, 1.0, 0.0, 0.5);
-  addDoubleParam(paramSet, "depthFalloff", "Depth Falloff", 0.1, 0.0, 1.0, 0.0, 0.5);
-  addDoubleParam(paramSet, "subjectProtection", "Subject Protection", 1.0, 0.0, 1.0, 0.0, 1.0);
-  addDoubleParam(paramSet, "depthInfluence", "Depth Influence", 0.8, 0.0, 1.0, 0.0, 1.0);
-  addDoubleParam(paramSet, "depthDefocusPixels", "Depth Defocus", 18.0, 0.0, 160.0, 0.0, 60.0);
-  addDoubleParam(paramSet, "depthBloomBoost", "Depth Highlight Shape", 0.65, 0.0, 3.0, 0.0, 1.5);
   // Backward compatibility for older saved projects.
   addDoubleParam(paramSet, "halationExposureThreshold", "Legacy Halation Exposure Threshold", 0.5,
                  0.0, 1.0, 0.0, 1.0);
@@ -208,19 +190,12 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addBooleanParam(paramSet, "autoEdgeCrop", "Auto Edge Crop", 0,
                   "Crops in by the smallest amount needed to keep warped edge samples inside the source image.");
 
-  const char *core[] = {"mix", "renderQuality", "lookPreset"};
+  const char *core[] = {"mix", "debugView", "renderQuality", "lookPreset"};
   for (const char *name : core) {
     setParamParent(paramSet, name, "coreGroup");
   }
 
-  const char *depth[] = {"debugView", "depthMapEnabled", "previewDepthMap", "depthMapInvert", "focusDepth",
-                         "depthFocusRange", "depthFalloff", "subjectProtection", "depthInfluence",
-                         "depthDefocusPixels",
-                         "depthBloomBoost"};
-  for (const char *name : depth) {
-    setParamParent(paramSet, name, "depthGroup");
-  }
-  setParamParent(paramSet, "halationExposureThreshold", "depthGroup");
+  setParamParent(paramSet, "halationExposureThreshold", "coreGroup");
   {
     OfxParamHandle legacyParam = nullptr;
     OfxPropertySetHandle legacyProps = nullptr;

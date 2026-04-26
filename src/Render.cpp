@@ -23,38 +23,12 @@
 namespace rimell {
 namespace {
 
-struct DepthAlphaB {
-  unsigned char v;
-};
-
-struct DepthAlphaS {
-  unsigned short v;
-};
-
-struct DepthAlphaF {
-  float v;
-};
-
-enum class DepthBitDepth { Byte, Short, Float };
-
-enum class DepthComponents { Alpha, RGBA };
-
 enum class DebugView {
   Off = 0,
   Source = 1,
-  Depth = 2,
-  DepthFocusMask = 3,
-  HighlightMatte = 4,
-  EdgeMask = 5,
+  HighlightMatte = 2,
+  EdgeMask = 3,
 };
-
-struct DepthImage {
-  const Image *image = nullptr;
-  DepthBitDepth bitDepth = DepthBitDepth::Float;
-  DepthComponents components = DepthComponents::Alpha;
-};
-
-enum class Backend { CPU, Metal };
 
 struct InstanceData {};
 
@@ -81,38 +55,6 @@ bool metalRuntimeAvailable() {
 }
 
 template <typename T>
-float sampleDepthAlphaBilinear(const Image &image, float x, float y, float scale) {
-  if (!image.data || image.bounds.x1 >= image.bounds.x2 || image.bounds.y1 >= image.bounds.y2 ||
-      !std::isfinite(x) || !std::isfinite(y)) {
-    return 0.0f;
-  }
-
-  const int x0 = static_cast<int>(std::floor(x));
-  const int y0 = static_cast<int>(std::floor(y));
-  const float tx = x - static_cast<float>(x0);
-  const float ty = y - static_cast<float>(y0);
-
-  const int x0c = clampCoord(x0, image.bounds.x1, image.bounds.x2 - 1);
-  const int x1c = clampCoord(x0 + 1, image.bounds.x1, image.bounds.x2 - 1);
-  const int y0c = clampCoord(y0, image.bounds.y1, image.bounds.y2 - 1);
-  const int y1c = clampCoord(y0 + 1, image.bounds.y1, image.bounds.y2 - 1);
-
-  const T *p00 = pixelAddress<T>(image, x0c, y0c);
-  const T *p10 = pixelAddress<T>(image, x1c, y0c);
-  const T *p01 = pixelAddress<T>(image, x0c, y1c);
-  const T *p11 = pixelAddress<T>(image, x1c, y1c);
-
-  const float v00 = p00 ? static_cast<float>(p00->v) * scale : 0.0f;
-  const float v10 = p10 ? static_cast<float>(p10->v) * scale : 0.0f;
-  const float v01 = p01 ? static_cast<float>(p01->v) * scale : 0.0f;
-  const float v11 = p11 ? static_cast<float>(p11->v) * scale : 0.0f;
-
-  const float top = lerp(v00, v10, tx);
-  const float bottom = lerp(v01, v11, tx);
-  return lerp(top, bottom, ty);
-}
-
-template <typename T>
 Pixel warpedSourceSample(const Image &source, float dstX, float dstY, int width, int height,
                          const RenderParams &params, float caPixels) {
   const Vec2 cropped = applyEdgeCrop(dstX, dstY, source, params.edgeCropScale);
@@ -122,52 +64,6 @@ Pixel warpedSourceSample(const Image &source, float dstX, float dstY, int width,
   sourcePixel.x += map.caDirection.x * caPixels * caMask;
   sourcePixel.y += map.caDirection.y * caPixels * caMask;
   return sampleBilinear<T>(source, sourcePixel.x, sourcePixel.y);
-}
-
-bool parseDepthBitDepth(const char *bitDepth, DepthBitDepth *outDepthBitDepth) {
-  if (!bitDepth || !outDepthBitDepth) {
-    return false;
-  }
-  if (std::strcmp(bitDepth, kOfxBitDepthByte) == 0) {
-    *outDepthBitDepth = DepthBitDepth::Byte;
-    return true;
-  }
-  if (std::strcmp(bitDepth, kOfxBitDepthShort) == 0) {
-    *outDepthBitDepth = DepthBitDepth::Short;
-    return true;
-  }
-  if (std::strcmp(bitDepth, kOfxBitDepthFloat) == 0) {
-    *outDepthBitDepth = DepthBitDepth::Float;
-    return true;
-  }
-  return false;
-}
-
-bool parseDepthComponents(const char *components, DepthComponents *outDepthComponents) {
-  if (!components || !outDepthComponents) {
-    return false;
-  }
-  if (std::strcmp(components, kOfxImageComponentAlpha) == 0) {
-    *outDepthComponents = DepthComponents::Alpha;
-    return true;
-  }
-  if (std::strcmp(components, kOfxImageComponentRGBA) == 0) {
-    *outDepthComponents = DepthComponents::RGBA;
-    return true;
-  }
-  return false;
-}
-
-int bytesPerChannel(DepthBitDepth bitDepth) {
-  switch (bitDepth) {
-  case DepthBitDepth::Byte:
-    return 1;
-  case DepthBitDepth::Short:
-    return 2;
-  case DepthBitDepth::Float:
-    return 4;
-  }
-  return 0;
 }
 
 bool validateImageLayout(const Image &image, int bytesPerPixel) {
@@ -206,73 +102,20 @@ void logImageLayout(LogLevel level, const char *scope, const char *name, const I
             required);
 }
 
-float sampleDepthAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
-  if (!depth || !depth->image || !depth->image->data || params.depthMapEnabled == 0) {
-    return 0.0f;
-  }
-
-  if (!std::isfinite(x) || !std::isfinite(y)) {
-    return 0.0f;
-  }
-
-  float value = 0.0f;
-  if (depth->components == DepthComponents::Alpha) {
-    if (depth->bitDepth == DepthBitDepth::Byte) {
-      value = sampleDepthAlphaBilinear<DepthAlphaB>(*depth->image, x, y, 1.0f / 255.0f);
-    } else if (depth->bitDepth == DepthBitDepth::Short) {
-      value = sampleDepthAlphaBilinear<DepthAlphaS>(*depth->image, x, y, 1.0f / 65535.0f);
-    } else {
-      value = sampleDepthAlphaBilinear<DepthAlphaF>(*depth->image, x, y, 1.0f);
-    }
-  } else {
-    Pixel sample{};
-    if (depth->bitDepth == DepthBitDepth::Byte) {
-      sample = sampleBilinear<OfxRGBAColourB>(*depth->image, x, y);
-    } else if (depth->bitDepth == DepthBitDepth::Short) {
-      sample = sampleBilinear<OfxRGBAColourS>(*depth->image, x, y);
-    } else {
-      sample = sampleBilinear<OfxRGBAColourF>(*depth->image, x, y);
-    }
-    value = luminance(sample);
-  }
-
-  if (!std::isfinite(value)) {
-    return 0.0f;
-  }
-
-  value = clamp01(value);
-  return params.depthMapInvert != 0 ? 1.0f - value : value;
-}
-
-float depthDefocusMaskAt(const DepthImage *depth, float x, float y, const RenderParams &params) {
-  if (!depth || !depth->image || !depth->image->data || params.depthMapEnabled == 0 ||
-      params.depthInfluence <= 0.0001f) {
-    return 0.0f;
-  }
-
-  const float depthValue = sampleDepthAt(depth, x, y, params);
-  const float separation = std::abs(depthValue - params.focusDepth);
-  const float focusRange = std::max(0.001f, params.depthFocusRange);
-  const float feather = std::max(0.05f, focusRange * 0.75f);
-  return smoothstep(focusRange, focusRange + feather, separation) * params.depthInfluence;
-}
-
 float highlightMatteAt(const Pixel &sample, const RenderParams &params) {
   return clamp01(smoothstep(params.flareThreshold, 1.0f, luminance(sample)));
 }
 
 float edgeMaskAt(const Image &source, float x, float y, int width, int height,
-                 const RenderParams &params, const DepthImage *depth) {
+                 const RenderParams &params) {
   const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
   const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
   const float nx = (x - cx) / std::max(1.0f, width * 0.5f);
   const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
   const LensMap map = buildLensMap(x, y, source, width, height, params);
   const float radius = std::max(map.radius, std::sqrt(nx * nx + ny * ny));
-  const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
   const float edge = std::max({map.edgeMask,
-                               smoothstep(std::max(0.0f, 1.0f - params.radialFalloff), 1.15f, radius),
-                               depthDefocus * 0.7f});
+                               smoothstep(std::max(0.0f, 1.0f - params.radialFalloff), 1.15f, radius)});
   return clamp01(edge);
 }
 
@@ -322,7 +165,7 @@ Pixel channelDefocusSample(const Image &source, float x, float y, int width, int
 
 template <typename T>
 Pixel opticalBaseSample(const Image &source, float x, float y, int width, int height,
-                        const RenderParams &params, const DepthImage *depth) {
+                        const RenderParams &params) {
   const float caPixels = params.lateralCA * params.lateralCAPixelScale;
   Pixel base = warpedSourceSample<T>(source, x, y, width, height, params, 0.0f);
   Pixel red = warpedSourceSample<T>(source, x, y, width, height, params, caPixels);
@@ -337,11 +180,10 @@ Pixel opticalBaseSample(const Image &source, float x, float y, int width, int he
     const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
     const float edge = smoothstep(0.15f, 1.05f, std::sqrt(nx * nx + ny * ny));
     const float focusBias = 0.35f + std::abs(params.focusDistance - 0.5f) * 1.3f;
-    const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
-    const float radiusPixels = params.longitudinalCA * focusBias * std::max(edge, depthDefocus) * 4.0f;
+    const float radiusPixels = params.longitudinalCA * focusBias * edge * 4.0f;
     const Pixel redDefocus = channelDefocusSample<T>(source, x, y, width, height, params, radiusPixels);
     const Pixel blueDefocus = channelDefocusSample<T>(source, x, y, width, height, params, radiusPixels * 0.65f);
-    const float amount = clamp01(params.longitudinalCA * (0.35f + std::max(edge, depthDefocus) * 0.65f));
+    const float amount = clamp01(params.longitudinalCA * (0.35f + edge * 0.65f));
     base.r = lerp(base.r, redDefocus.r, amount);
     base.b = lerp(base.b, blueDefocus.b, amount);
   }
@@ -351,23 +193,20 @@ Pixel opticalBaseSample(const Image &source, float x, float y, int width, int he
 
 template <typename T>
 Pixel edgeCharacter(const Image &source, float x, float y, int width, int height, const Pixel &base,
-                    const RenderParams &params, const DepthImage *depth) {
+                    const RenderParams &params) {
   const float cx = static_cast<float>(source.bounds.x1 + source.bounds.x2 - 1) * 0.5f;
   const float cy = static_cast<float>(source.bounds.y1 + source.bounds.y2 - 1) * 0.5f;
   const float nx = (x - cx) / std::max(1.0f, width * 0.5f);
   const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
   const LensMap map = buildLensMap(x, y, source, width, height, params);
   const float radius = std::max(map.radius, std::sqrt(nx * nx + ny * ny));
-  const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
   const float edge = std::max({map.edgeMask,
-                               smoothstep(std::max(0.0f, 1.0f - params.radialFalloff), 1.15f, radius),
-                               depthDefocus * 0.7f});
+                               smoothstep(std::max(0.0f, 1.0f - params.radialFalloff), 1.15f, radius)});
 
   Pixel result = base;
 
   const float blurRadius =
-      params.edgeBlur * edge * params.edgeBlurPixels + params.fieldCurvature * edge * params.fieldCurvaturePixels +
-      depthDefocus * params.depthDefocusPixels * 0.35f;
+      params.edgeBlur * edge * params.edgeBlurPixels + params.fieldCurvature * edge * params.fieldCurvaturePixels;
   if (blurRadius > 0.05f) {
     Pixel blur{};
     float weight = 0.0f;
@@ -425,54 +264,6 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
 }
 
 template <typename T>
-Pixel depthDefocusCharacter(const Image &source, float x, float y, int width, int height, const Pixel &base,
-                            const RenderParams &params, const DepthImage *depth) {
-  const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
-  const float blurRadius = depthDefocus * params.depthDefocusPixels;
-  if (blurRadius <= 0.05f) {
-    return base;
-  }
-
-  const float rotation = params.bokehRotation * kPi / 180.0f;
-  const float cosR = std::cos(rotation);
-  const float sinR = std::sin(rotation);
-  const float stretch = (1.0f + params.bokehStretch * params.bokehStretchScale) *
-                        lensIdentityBloomScale(params);
-  const int rings = params.renderQuality == 0 ? 1 : (params.renderQuality == 2 ? 3 : 2);
-  const int samplesPerRing = params.renderQuality == 0 ? 5 : (params.renderQuality == 2 ? 12 : 8);
-
-  Pixel blur{};
-  float total = 0.0f;
-  for (int ring = 1; ring <= rings; ++ring) {
-    const float ringRadius = blurRadius * static_cast<float>(ring) / static_cast<float>(rings);
-    for (int i = 0; i < samplesPerRing; ++i) {
-      const float a = 2.0f * kPi * static_cast<float>(i) / static_cast<float>(samplesPerRing);
-      float ox = std::cos(a) * ringRadius / stretch;
-      float oy = std::sin(a) * ringRadius * stretch;
-      const float rx = ox * cosR - oy * sinR;
-      const float ry = ox * sinR + oy * cosR;
-      const Pixel sample = warpedSourceSample<T>(source, x + rx, y + ry, width, height, params, 0.0f);
-      const float weight = 1.0f / static_cast<float>(ring);
-      blur.r += sample.r * weight;
-      blur.g += sample.g * weight;
-      blur.b += sample.b * weight;
-      blur.a += sample.a * weight;
-      total += weight;
-    }
-  }
-
-  if (total <= 0.0f) {
-    return base;
-  }
-
-  blur.r /= total;
-  blur.g /= total;
-  blur.b /= total;
-  blur.a /= total;
-  return lerpPixel(base, blur, clamp01(depthDefocus));
-}
-
-template <typename T>
 Pixel mappedSample(const Image &source, float x, float y, int width, int height, const RenderParams &params) {
   return warpedSourceSample<T>(source, x, y, width, height, params, 0.0f);
 }
@@ -486,7 +277,7 @@ float highlightAt(const Image &source, float x, float y, int width, int height, 
 
 template <typename T>
 Pixel lensAdditives(const Image &source, float x, float y, int width, int height, const RenderParams &params,
-                    const Pixel &base, const DepthImage *depth) {
+                    const Pixel &base) {
   Pixel add{};
 
   const float flareAngle = params.flareAngle * kPi / 180.0f;
@@ -506,8 +297,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float sx = x + dirX * t * flareSpan;
       const float sy = y + dirY * t * flareSpan;
       const float h = highlightAt<T>(source, sx, sy, width, height, params, params.flareThreshold);
-      const float depthBoost = 1.0f + depthDefocusMaskAt(depth, sx, sy, params) * params.depthBloomBoost;
-      const float w = std::exp(-std::abs(t) * params.flareFalloff) * h * params.flareIntensity * depthBoost;
+      const float w = std::exp(-std::abs(t) * params.flareFalloff) * h * params.flareIntensity;
       add.r += params.flareColour.r * w;
       add.g += params.flareColour.g * w;
       add.b += params.flareColour.b * w;
@@ -516,7 +306,6 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
 
   const float bloomPixels = params.bloomRadius * params.bloomPixelScale;
   if ((params.veil > 0.001f || params.highlightCream > 0.001f) && bloomPixels > 0.5f) {
-    const float depthDefocus = depthDefocusMaskAt(depth, x, y, params);
     const float rotation = params.bokehRotation * kPi / 180.0f;
     const float cosR = std::cos(rotation);
     const float sinR = std::sin(rotation);
@@ -528,8 +317,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
     float total = 0.0f;
     Pixel bloom{};
     for (int ring = 1; ring <= rings; ++ring) {
-      const float ringRadius = bloomPixels * (1.0f + depthDefocus * params.depthBloomBoost) *
-                               static_cast<float>(ring) / static_cast<float>(rings);
+      const float ringRadius = bloomPixels * static_cast<float>(ring) / static_cast<float>(rings);
       for (int i = 0; i < samplesPerRing; ++i) {
         const float a = 2.0f * kPi * static_cast<float>(i) / static_cast<float>(samplesPerRing);
         float ox = std::cos(a) * ringRadius / stretch;
@@ -555,7 +343,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float protect = lerp(1.0f, clamp01(luminance(base) * 2.0f), params.blackLiftProtection);
       const float amount =
           (params.veil * params.bloomVeilScale + params.highlightCream * params.bloomCreamScale) * protect *
-          bokehEdgeKeep * (1.0f + depthDefocus * params.depthBloomBoost);
+          bokehEdgeKeep;
       add.r += bloom.r * amount;
       add.g += bloom.g * amount;
       add.b += bloom.b * amount;
@@ -576,9 +364,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
       const float sy = cy - (y - cy) * scale * lensIdentityGhostScaleY(params);
       const Pixel ghost = mappedSample<T>(source, sx, sy, width, height, params);
       const float h = smoothstep(params.flareThreshold, 1.0f, luminance(ghost));
-        const float depthBoost =
-          1.0f + depthDefocusMaskAt(depth, sx, sy, params) * params.depthBloomBoost * 0.5f;
-      const float w = h * (params.ghostIntensity / static_cast<float>(i)) * tintShift * depthBoost;
+      const float w = h * (params.ghostIntensity / static_cast<float>(i)) * tintShift;
       add.r += ghost.r * params.ghostTint.r * w;
       add.g += ghost.g * params.ghostTint.g * w;
       add.b += ghost.b * params.ghostTint.b * w;
@@ -596,7 +382,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
 template <typename T>
 OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const Image &output,
                       const OfxRectI &renderWindow, const RenderParams &params,
-                      const DepthImage *depth, const char *pixelTag) {
+                      const char *pixelTag) {
   const int width = source.bounds.x2 - source.bounds.x1;
   const int height = source.bounds.y2 - source.bounds.y1;
   const DebugView debugView = static_cast<DebugView>(params.debugView);
@@ -605,12 +391,10 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
   const auto started = std::chrono::steady_clock::now();
   std::uint64_t pixelsWritten = 0;
   bool aborted = false;
-  const bool hasDepth = depth && depth->image && depth->image->data;
   logPrintf(LogLevel::Debug,
             "render.cpu",
-            "enter renderTyped pixelType=%s hasDepth=%d sourceData=%p sourceRowBytes=%d sourceBounds=[%d,%d,%d,%d] outputData=%p outputRowBytes=%d outputBounds=[%d,%d,%d,%d] depthData=%p depthRowBytes=%d depthBounds=[%d,%d,%d,%d]",
+            "enter renderTyped pixelType=%s sourceData=%p sourceRowBytes=%d sourceBounds=[%d,%d,%d,%d] outputData=%p outputRowBytes=%d outputBounds=[%d,%d,%d,%d]",
             pixelTag ? pixelTag : "unknown",
-            hasDepth ? 1 : 0,
             source.data,
             source.rowBytes,
             source.bounds.x1,
@@ -622,13 +406,7 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
             output.bounds.x1,
             output.bounds.y1,
             output.bounds.x2,
-            output.bounds.y2,
-            hasDepth ? depth->image->data : nullptr,
-            hasDepth ? depth->image->rowBytes : 0,
-            hasDepth ? depth->image->bounds.x1 : 0,
-            hasDepth ? depth->image->bounds.y1 : 0,
-            hasDepth ? depth->image->bounds.x2 : 0,
-            hasDepth ? depth->image->bounds.y2 : 0);
+            output.bounds.y2);
 
   for (int y = renderWindow.y1; y < renderWindow.y2; ++y) {
     if (y == renderWindow.y1) {
@@ -659,21 +437,14 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
 
       if (debugEnabled) {
         Pixel debugColor = original;
-        if (debugView == DebugView::Depth) {
-          const float d = depth ? sampleDepthAt(depth, static_cast<float>(x), static_cast<float>(y), params) : 0.0f;
-          debugColor = {d, d, d, 1.0f};
-        } else if (debugView == DebugView::DepthFocusMask) {
-          const float m = depth ? depthDefocusMaskAt(depth, static_cast<float>(x), static_cast<float>(y), params)
-                                : 0.0f;
-          debugColor = {m, m, m, 1.0f};
-        } else if (debugView == DebugView::HighlightMatte) {
+        if (debugView == DebugView::HighlightMatte) {
           const Pixel mapped = mappedSample<T>(source, static_cast<float>(x), static_cast<float>(y),
                                                width, height, params);
           const float h = highlightMatteAt(mapped, params);
           debugColor = {h, h, h, 1.0f};
         } else if (debugView == DebugView::EdgeMask) {
           const float e = edgeMaskAt(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                     params, depth);
+                                     params);
           debugColor = {e, e, e, 1.0f};
         }
 
@@ -688,13 +459,11 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
       }
 
       Pixel color = opticalBaseSample<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                         params, depth);
+                                         params);
       color = edgeCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, color,
-                               params, depth);
-      color = depthDefocusCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                       color, params, depth);
+                               params);
       const Pixel add = lensAdditives<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                         params, color, depth);
+                                         params, color);
       color.r += add.r;
       color.g += add.g;
       color.b += add.b;
@@ -749,8 +518,6 @@ void fillEmptyTyped(const Image &output, const OfxRectI &renderWindow) {
   }
 }
 
-bool clipConnected(OfxImageClipHandle clip);
-
 bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *imageHandle, Image *image) {
   if (!clip || !imageHandle || !image) {
     return false;
@@ -780,18 +547,6 @@ bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *ima
   }
 
   return true;
-}
-
-bool fetchOptionalImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *imageHandle,
-                        Image *image) {
-  *imageHandle = nullptr;
-  *image = {};
-
-  if (!clip || !clipConnected(clip)) {
-    return false;
-  }
-
-  return fetchImage(clip, time, imageHandle, image);
 }
 
 bool getImageString(OfxPropertySetHandle imageHandle, const char *property, char **value) {
@@ -827,29 +582,6 @@ bool metalEnabled(OfxPropertySetHandle inArgs, void **commandQueue) {
 #endif
 }
 
-bool clipConnected(OfxImageClipHandle clip) {
-  if (!clip) {
-    return false;
-  }
-
-  OfxPropertySetHandle clipProps = nullptr;
-  if (gEffectSuite->clipGetPropertySet(clip, &clipProps) != kOfxStatOK || !clipProps) {
-    return false;
-  }
-
-  int connected = 0;
-  return gPropertySuite->propGetInt(clipProps, kOfxImageClipPropConnected, 0, &connected) == kOfxStatOK &&
-         connected != 0;
-}
-
-bool validateDepthGeometry(const Image &source, const Image &depth) {
-  const int sourceWidth = source.bounds.x2 - source.bounds.x1;
-  const int sourceHeight = source.bounds.y2 - source.bounds.y1;
-  const int depthWidth = depth.bounds.x2 - depth.bounds.x1;
-  const int depthHeight = depth.bounds.y2 - depth.bounds.y1;
-  return sourceWidth == depthWidth && sourceHeight == depthHeight;
-}
-
 float roiPaddingPixels(const RenderParams &params) {
   const float flarePadding = params.flareIntensity > 0.001f
                                  ? params.flareLength * params.flareSpanScale * lensIdentityFlareScale(params) * 512.0f
@@ -860,21 +592,10 @@ float roiPaddingPixels(const RenderParams &params) {
   const float edgePadding = std::max(params.edgeBlur * params.edgeBlurPixels,
                                      (params.tangentialSmear + params.horizontalSmear) * params.smearPixels);
   const float chromaticPadding = params.lateralCA * params.lateralCAPixelScale + params.longitudinalCA * 3.0f;
-  const float depthPadding = params.depthMapEnabled != 0 ? params.depthDefocusPixels * params.depthInfluence : 0.0f;
-  return std::max({flarePadding, bloomPadding, edgePadding, chromaticPadding, depthPadding, 2.0f});
+  return std::max({flarePadding, bloomPadding, edgePadding, chromaticPadding, 2.0f});
 }
 
 } // namespace
-
-const char *backendName(Backend backend) {
-  switch (backend) {
-  case Backend::CPU:
-    return "CPU";
-  case Backend::Metal:
-    return "Metal";
-  }
-  return "Unknown";
-}
 
 OfxStatus createInstance(OfxImageEffectHandle instance) {
   if (!instance || !gEffectSuite || !gPropertySuite) {
@@ -945,7 +666,6 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
 #endif
 
   OfxImageClipHandle sourceClip = nullptr;
-  OfxImageClipHandle depthClip = nullptr;
   OfxImageClipHandle outputClip = nullptr;
   stage = "get_clips";
   if (gEffectSuite->clipGetHandle(instance, kOfxImageEffectSimpleSourceClipName, &sourceClip, nullptr) !=
@@ -956,22 +676,16 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
     renderTimer.setResult("failed_get_clips");
     return kOfxStatErrBadHandle;
   }
-  gEffectSuite->clipGetHandle(instance, kDepthClipName, &depthClip, nullptr);
   logPrintf(LogLevel::Debug,
             "render",
-            "clip handles source=%p output=%p depth=%p depthConnected=%d",
+            "clip handles source=%p output=%p",
             sourceClip,
-            outputClip,
-            depthClip,
-            clipConnected(depthClip) ? 1 : 0);
+            outputClip);
 
   OfxPropertySetHandle sourceImageHandle = nullptr;
-  OfxPropertySetHandle depthImageHandle = nullptr;
   OfxPropertySetHandle outputImageHandle = nullptr;
   Image source{};
-  Image depth{};
   Image output{};
-  DepthImage depthImage{};
   OfxStatus status = kOfxStatOK;
 
   try {
@@ -1026,88 +740,11 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
             RenderParams params = readParams(instance);
             logPrintf(LogLevel::Debug,
                       "render",
-                      "params mix=%.3f quality=%d depthEnabled=%d lensIdentity=%d",
+                      "params mix=%.3f quality=%d lensIdentity=%d",
                       params.mix,
                       params.renderQuality,
-                      params.depthMapEnabled,
                       params.lensIdentity);
 
-            stage = "fetch_depth";
-            const bool depthRequested = params.depthMapEnabled != 0;
-            const bool depthClipAvailable = depthClip != nullptr;
-            const bool depthClipIsConnected = clipConnected(depthClip);
-            const bool depthImageFetched =
-              depthRequested && depthClipAvailable && depthClipIsConnected &&
-              fetchImage(depthClip, time, &depthImageHandle, &depth);
-            bool hasDepth = depthImageFetched;
-            logPrintf(LogLevel::Debug,
-                  "render",
-                  "depth preflight requested=%d clipAvailable=%d clipConnected=%d fetched=%d handle=%p data=%p rowBytes=%d bounds=[%d,%d,%d,%d]",
-                  depthRequested ? 1 : 0,
-                  depthClipAvailable ? 1 : 0,
-                  depthClipIsConnected ? 1 : 0,
-                  depthImageFetched ? 1 : 0,
-                  depthImageHandle,
-              depthImageFetched ? depth.data : nullptr,
-              depthImageFetched ? depth.rowBytes : 0,
-              depthImageFetched ? depth.bounds.x1 : 0,
-              depthImageFetched ? depth.bounds.y1 : 0,
-              depthImageFetched ? depth.bounds.x2 : 0,
-              depthImageFetched ? depth.bounds.y2 : 0);
-            char *depthBitDepth = nullptr;
-            char *depthComponents = nullptr;
-            if (hasDepth) {
-              if (!getImageString(depthImageHandle, kOfxImageEffectPropPixelDepth, &depthBitDepth) ||
-                  !getImageString(depthImageHandle, kOfxImageEffectPropComponents, &depthComponents) ||
-                  !parseDepthBitDepth(depthBitDepth, &depthImage.bitDepth) ||
-                  !parseDepthComponents(depthComponents, &depthImage.components)) {
-                hasDepth = false;
-                logMessage(LogLevel::Warn, "render", "depth clip present but format unsupported, depth disabled");
-              } else {
-                const int depthBpp = bytesPerChannel(depthImage.bitDepth) *
-                                     (depthImage.components == DepthComponents::RGBA ? 4 : 1);
-                const bool depthLayoutValid = validateImageLayout(depth, depthBpp);
-                const bool depthGeometryValid = hasSource ? validateDepthGeometry(source, depth) : true;
-                const bool depthRowDirectionValid = depth.rowBytes > 0;
-                if (!depthLayoutValid || !depthGeometryValid || !depthRowDirectionValid) {
-                  logImageLayout(LogLevel::Warn, "render", "depth", depth, depthBpp, false);
-                  if (!depthGeometryValid && hasSource) {
-                    logPrintf(LogLevel::Warn,
-                              "render",
-                              "depth clip disabled due to geometry mismatch source=[%d,%d,%d,%d] depth=[%d,%d,%d,%d]",
-                              source.bounds.x1,
-                              source.bounds.y1,
-                              source.bounds.x2,
-                              source.bounds.y2,
-                              depth.bounds.x1,
-                              depth.bounds.y1,
-                              depth.bounds.x2,
-                              depth.bounds.y2);
-                  }
-                  if (!depthRowDirectionValid) {
-                    logPrintf(LogLevel::Warn,
-                              "render",
-                              "depth clip disabled due to unsupported row direction rowBytes=%d",
-                              depth.rowBytes);
-                  }
-                  logPrintf(LogLevel::Warn,
-                            "render",
-                            "depth clip disabled due to invalid layout/format bitDepth=%s components=%s",
-                            depthBitDepth ? depthBitDepth : "(null)",
-                            depthComponents ? depthComponents : "(null)");
-                  hasDepth = false;
-                } else {
-                  logImageLayout(LogLevel::Debug, "render", "depth", depth, depthBpp, true);
-                  logPrintf(LogLevel::Debug,
-                            "render",
-                            "depth accepted bitDepth=%s components=%s bytesPerPixel=%d",
-                            depthBitDepth ? depthBitDepth : "(null)",
-                            depthComponents ? depthComponents : "(null)",
-                            depthBpp);
-                  depthImage.image = &depth;
-                }
-              }
-            }
             {
               stage = "dispatch_render";
               if (hasSource) {
@@ -1115,12 +752,11 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                                                              source.bounds.y2 - source.bounds.y1, params);
               }
               void *metalCommandQueue = nullptr;
-              const bool useMetal = hasSource && !hasDepth && metalEnabled(inArgs, &metalCommandQueue);
+              const bool useMetal = hasSource && metalEnabled(inArgs, &metalCommandQueue);
               logPrintf(LogLevel::Info,
                         "render",
-                        "render path source=%d depth=%d metal=%d outputBitDepth=%s",
+                        "render path source=%d metal=%d outputBitDepth=%s",
                         hasSource ? 1 : 0,
-                        hasDepth ? 1 : 0,
                         useMetal ? 1 : 0,
                         outputBitDepth ? outputBitDepth : "(null)");
               if (useMetal && std::strcmp(outputBitDepth, kOfxBitDepthFloat) == 0) {
@@ -1142,16 +778,12 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 if (hasSource) {
                   logPrintf(LogLevel::Debug,
                             "render",
-                            "dispatch cpu pixelType=byte hasDepth=%d sourceData=%p sourceRowBytes=%d outputData=%p outputRowBytes=%d depthData=%p depthRowBytes=%d",
-                            hasDepth ? 1 : 0,
+                            "dispatch cpu pixelType=byte sourceData=%p sourceRowBytes=%d outputData=%p outputRowBytes=%d",
                             source.data,
                             source.rowBytes,
                             output.data,
-                            output.rowBytes,
-                            hasDepth ? depth.data : nullptr,
-                            hasDepth ? depth.rowBytes : 0);
-                  status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params,
-                                                       hasDepth ? &depthImage : nullptr, "byte");
+                            output.rowBytes);
+                  status = renderTyped<OfxRGBAColourB>(instance, source, output, renderWindow, params, "byte");
                 } else {
                   fillEmptyTyped<OfxRGBAColourB>(output, renderWindow);
                 }
@@ -1159,16 +791,12 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 if (hasSource) {
                   logPrintf(LogLevel::Debug,
                             "render",
-                            "dispatch cpu pixelType=short hasDepth=%d sourceData=%p sourceRowBytes=%d outputData=%p outputRowBytes=%d depthData=%p depthRowBytes=%d",
-                            hasDepth ? 1 : 0,
+                            "dispatch cpu pixelType=short sourceData=%p sourceRowBytes=%d outputData=%p outputRowBytes=%d",
                             source.data,
                             source.rowBytes,
                             output.data,
-                            output.rowBytes,
-                            hasDepth ? depth.data : nullptr,
-                            hasDepth ? depth.rowBytes : 0);
-                  status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params,
-                                                       hasDepth ? &depthImage : nullptr, "short");
+                            output.rowBytes);
+                  status = renderTyped<OfxRGBAColourS>(instance, source, output, renderWindow, params, "short");
                 } else {
                   fillEmptyTyped<OfxRGBAColourS>(output, renderWindow);
                 }
@@ -1176,16 +804,12 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                 if (hasSource) {
                   logPrintf(LogLevel::Debug,
                             "render",
-                            "dispatch cpu pixelType=float hasDepth=%d sourceData=%p sourceRowBytes=%d outputData=%p outputRowBytes=%d depthData=%p depthRowBytes=%d",
-                            hasDepth ? 1 : 0,
+                            "dispatch cpu pixelType=float sourceData=%p sourceRowBytes=%d outputData=%p outputRowBytes=%d",
                             source.data,
                             source.rowBytes,
                             output.data,
-                            output.rowBytes,
-                            hasDepth ? depth.data : nullptr,
-                            hasDepth ? depth.rowBytes : 0);
-                  status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params,
-                                                       hasDepth ? &depthImage : nullptr, "float");
+                            output.rowBytes);
+                  status = renderTyped<OfxRGBAColourF>(instance, source, output, renderWindow, params, "float");
                 } else {
                   fillEmptyTyped<OfxRGBAColourF>(output, renderWindow);
                 }
@@ -1212,9 +836,6 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
 
   if (sourceImageHandle) {
     gEffectSuite->clipReleaseImage(sourceImageHandle);
-  }
-  if (depthImageHandle) {
-    gEffectSuite->clipReleaseImage(depthImageHandle);
   }
   if (outputImageHandle) {
     gEffectSuite->clipReleaseImage(outputImageHandle);
@@ -1287,9 +908,7 @@ OfxStatus getRegionsOfInterest(OfxImageEffectHandle instance, OfxPropertySetHand
 
   const std::string sourceRoi =
       clipPropertyName("OfxImageClipPropRoI_", kOfxImageEffectSimpleSourceClipName);
-  const std::string depthRoi = clipPropertyName("OfxImageClipPropRoI_", kDepthClipName);
   gPropertySuite->propSetDoubleN(outArgs, sourceRoi.c_str(), 4, roi);
-  gPropertySuite->propSetDoubleN(outArgs, depthRoi.c_str(), 4, roi);
   return kOfxStatOK;
 }
 

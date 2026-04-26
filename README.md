@@ -155,7 +155,6 @@ In this plugin, overscan is relevant to:
 * flare span
 * bloom radius
 * ghost spread
-* depth-driven defocus
 * chromatic aberration offsets
 
 The plugin’s ROI expansion should be treated as the OFX equivalent of an OpenLensIO-style overscan requirement.
@@ -166,10 +165,7 @@ OpenLensIO includes aperture/focus concepts related to circle of confusion, but 
 
 The current plugin uses:
 
-* `focusDistance` / `Focus Depth`
-* optional depth map input
-* depth focus range
-* depth defocus pixels
+* `focusDistance`
 * oval highlight bloom
 * longitudinal CA approximation
 
@@ -445,15 +441,14 @@ Rimell Anamorphic approximates this through:
 * threshold scaling
 * bloom vignette dimming
 * cat-eye style edge dimming
-* optional depth-map driven focus falloff when a depth source is connected
 
-This remains an approximation rather than a physical lens solve. When no depth input is connected, the plugin detects and reshapes highlight regions from the plate. When a depth map is connected, the map drives focus-aware defocus, bloom scale, flare contribution, ghost response, and longitudinal CA strength.
+This remains an approximation rather than a physical lens solve. The plugin detects and reshapes highlight regions from the plate, with focus-style response controlled by image-space lens and edge behaviour.
 
 ### 3. Differential depth of field
 
 Because an anamorphic lens has different optical behaviour in the horizontal and vertical planes, depth-of-field behaviour can feel different from a spherical lens.
 
-Rimell Anamorphic does not implement a physically complete depth-of-field model. Instead, it approximates the perceived result with edge falloff, focus distance response, edge blur, directional smear, oval highlight bloom, vertical sharpness compensation, and optional depth-map driven defocus.
+Rimell Anamorphic does not implement a physically complete depth-of-field model. Instead, it approximates the perceived result with edge falloff, focus distance response, edge blur, directional smear, oval highlight bloom, and vertical sharpness compensation.
 
 ### 4. Horizontal flares
 
@@ -577,11 +572,7 @@ wide framing + axis-specific geometry + edge falloff + oval highlight shaping + 
 
 Rimell Anamorphic is built around a stronger version of the second approach: the geometry, edge behaviour, chromatic aberration, bloom, flare, ghosts, and vignette all reference a shared virtual lens map where practical.
 
-The current implementation can also take an optional `Depth` clip. In DaVinci Resolve, generate the depth plate with Resolve's AI Depth Map tool and connect that output to the Rimell Anamorphic `Depth` input on the OFX node.
-
-### Depth input status
-
-The optional `Depth` input is currently in debug validation. The plugin can connect and display compatible RGBA depth plates, but full depth-driven optical behaviour is being enabled incrementally. During this phase, depth processing may be CPU-only and may be disabled automatically if the depth clip does not match the output bit depth and RGBA component layout.
+Depth-map input is disabled for now so Apple hosts can stay on the Metal render path.
 
 The plugin still infers lens calibration from controls rather than measured lens profiles, OpenLensIO payloads, or STMaps.
 
@@ -629,14 +620,6 @@ These presets are exposed as starting points through the normal OFX parameter se
   * radial distortion coefficients `k1...k6`
   * decentering coefficients `p1`, `p2`
   * overscan / ROI expansion values
-* Depth-map controls include:
-
-  * `Use Depth Map`, which enables the optional `Depth` input when connected
-  * `Invert Depth Map`, for hosts or node graphs where near/far values are reversed
-  * `Focus Depth`, which selects the in-focus depth value
-  * `Depth Focus Range`, which controls how much of the map remains protected around the focus value
-  * `Depth Influence`, `Depth Defocus Pixels`, and `Depth Bloom Boost`, which are being staged in gradually as depth-driven modules are validated
-
 ### 2. Virtual anamorphic geometry and axis-specific warping
 
 * Barrel and mustache distortion
@@ -706,7 +689,7 @@ These presets are exposed as starting points through the normal OFX parameter se
   * `Preview`
   * `Final`
 * Quality mode scales expensive sampling paths for flare, bloom, blur, ghosts, and chromatic work
-* Control groups are organised as Core, Depth Map, Geometry, Highlights / Flares, Edge / CA, and Framing where the host exposes OFX parameter groups
+* Control groups are organised as Core, Geometry, Highlights / Flares, Edge / CA, and Framing where the host exposes OFX parameter groups
 
 ---
 
@@ -719,7 +702,7 @@ These presets are exposed as starting points through the normal OFX parameter se
 * Oval highlight behaviour in this workflow is an approximation of anamorphic highlight response, not a physically complete depth-aware bokeh reconstruction.
 * Flare, ghosting, glare, CA, vignette, and blur are image-processing approximations rather than calibrated ray-traced simulations of a measured optical assembly.
 * The plugin does not currently know the real lens, aperture, subject distance, or sensor size unless those values are provided through a future profile layer.
-* It can use an external depth map for per-pixel focus separation, but that map is still an estimated image-space guide.
+* External depth-map focus separation is temporarily disabled while the render path is kept Metal-first.
 * The plugin does not currently import measured OpenLensIO lens payloads, export OpenLensIO profiles, import STMaps, or export STMaps.
 * The profile model is OpenLensIO-informed, not OpenLensIO-complete.
 
@@ -739,7 +722,7 @@ These presets are exposed as starting points through the normal OFX parameter se
 | Axis-dependent mapping        | different power in horizontal and vertical planes                    | shared procedural lens map, Anamorphic Transfer, Axis Warp, edge compression, vertical compensation                 |
 | Cylindrical optical character | one-axis optical power and axis-dependent aberration                 | horizontal/tangential smear, vertical sharpness compensation, oval highlight shaping                                |
 | Elliptical bokeh              | defocused points become vertically oval after desqueeze              | highlight isolation, oval bloom stretch, rotation, edge falloff, cat-eye dimming                                    |
-| Depth of field                | focus separation depends on subject distance, aperture, focal length | optional `Depth` input drives focus falloff, defocus radius, bloom scale, flare/ghost response, and longitudinal CA |
+| Depth of field                | focus separation depends on subject distance, aperture, focal length | focus distance, edge falloff, blur, smear, bloom shaping, and longitudinal CA approximations |
 | Linear flare                  | bright sources produce horizontal streaks                            | directional streak flare system with angle, span, threshold, density, colour, falloff, and identity scale           |
 | Veiling glare                 | optical wash and contrast loss around strong light                   | bloom/veil, centre veil, highlight cream, black-lift protection                                                     |
 | Ghosting                      | internal element reflections                                         | count/spread/tint/intensity ghost model with anamorphic axis bias                                                   |
@@ -753,7 +736,6 @@ These presets are exposed as starting points through the normal OFX parameter se
 
 * OFX context: Filter
 * Source clip: RGBA
-* Optional depth clip: RGBA, named `Depth`
 * Output clip: RGBA
 * Supported bit depths:
 
@@ -764,10 +746,9 @@ These presets are exposed as starting points through the normal OFX parameter se
 * Tiled rendering disabled
 * Temporal clip access disabled
 * Identity optimisation: if Mix is 0, the effect reports source identity
-* ROI expansion is implemented to account for flare, bloom, blur, depth defocus, and CA sampling footprint
-* CPU render path supports 8-bit, 16-bit, and 32-bit float RGBA
-* On Apple builds, the non-depth Metal render path supports 8-bit, 16-bit, and 32-bit float RGBA when the host supplies an OFX Metal command queue
-* CPU rendering remains the fallback when Metal is unavailable, unsupported by the host, or the optional `Depth` input is connected
+* ROI expansion is implemented to account for flare, bloom, blur, and CA sampling footprint
+* On Apple builds, Metal render is advertised for 8-bit, 16-bit, and 32-bit float RGBA when the host supplies an OFX Metal command queue
+* Apple builds advertise Metal-only rendering; CPU rendering remains available on non-Apple builds
 
 ---
 
@@ -781,7 +762,7 @@ The current version does not include:
 * lens calibration workflow
 * STMap import/export workflow
 * built-in preset browser beyond the current `Look Preset` parameter
-* multi-clip workflows beyond source/output/depth filter processing
+* multi-clip workflows beyond source/output filter processing
 * real measured lens model interchange
 * physically accurate internal reflection path tracing
 * calibrated aperture / circle-of-confusion modelling
@@ -804,7 +785,7 @@ Possible future features:
 * spherical-to-anamorphic distortion transitions
 * calibrated view maps for specific real lenses
 * depth/matte input for stronger bokeh behaviour
-* broader GPU render support for non-float bit depths and non-Metal platforms
+* GPU render support for non-Metal platforms
 * separate utility plugin for desqueeze/framing only
 * real-time preview optimisations
 
