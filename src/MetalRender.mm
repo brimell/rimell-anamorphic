@@ -759,14 +759,14 @@ kernel void rimell_copy(
 )metal";
 
 std::mutex pipelineMutex;
-std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> floatPipelineCache;
-std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> shortPipelineCache;
-std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> bytePipelineCache;
+std::unordered_map<id<MTLDevice>, id<MTLComputePipelineState>> floatPipelineCache;
+std::unordered_map<id<MTLDevice>, id<MTLComputePipelineState>> shortPipelineCache;
+std::unordered_map<id<MTLDevice>, id<MTLComputePipelineState>> bytePipelineCache;
 
 std::mutex copyPipelineMutex;
-std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> copyPipelineCache;
+std::unordered_map<id<MTLDevice>, id<MTLComputePipelineState>> copyPipelineCache;
 
-std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> &pipelineCacheForFormat(
+std::unordered_map<id<MTLDevice>, id<MTLComputePipelineState>> &pipelineCacheForFormat(
     MetalPixelFormat format) {
   switch (format) {
   case MetalPixelFormat::Byte:
@@ -831,9 +831,14 @@ const char *metalPixelFormatName(MetalPixelFormat format) {
 }
 
 id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue, MetalPixelFormat format) {
+  id<MTLDevice> device = queue.device;
+  if (!device) {
+    return nil;
+  }
+
   std::lock_guard<std::mutex> lock(pipelineMutex);
   auto &pipelineCache = pipelineCacheForFormat(format);
-  const auto it = pipelineCache.find(queue);
+  const auto it = pipelineCache.find(device);
   if (it != pipelineCache.end()) {
     return it->second;
   }
@@ -841,7 +846,7 @@ id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue, MetalPix
   NSError *error = nil;
   MTLCompileOptions *options = [MTLCompileOptions new];
   const std::string source = kernelSourceForFormat(format);
-  id<MTLLibrary> library = [queue.device newLibraryWithSource:@(source.c_str()) options:options error:&error];
+  id<MTLLibrary> library = [device newLibraryWithSource:@(source.c_str()) options:options error:&error];
   [options release];
   if (!library) {
     logPrintf(LogLevel::Error,
@@ -859,7 +864,7 @@ id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue, MetalPix
     return nil;
   }
 
-  id<MTLComputePipelineState> pipeline = [queue.device newComputePipelineStateWithFunction:function error:&error];
+  id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:function error:&error];
   [function release];
   [library release];
   if (!pipeline) {
@@ -870,21 +875,26 @@ id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue, MetalPix
               error ? [[error localizedDescription] UTF8String] : "(none)");
   }
   if (pipeline) {
-    pipelineCache[queue] = pipeline;
+    pipelineCache[device] = pipeline;
   }
   return pipeline;
 }
 
 id<MTLComputePipelineState> copyPipelineForQueue(id<MTLCommandQueue> queue) {
+  id<MTLDevice> device = queue.device;
+  if (!device) {
+    return nil;
+  }
+
   std::lock_guard<std::mutex> lock(copyPipelineMutex);
-  const auto it = copyPipelineCache.find(queue);
+  const auto it = copyPipelineCache.find(device);
   if (it != copyPipelineCache.end()) {
     return it->second;
   }
 
   NSError *error = nil;
   MTLCompileOptions *options = [MTLCompileOptions new];
-  id<MTLLibrary> library = [queue.device newLibraryWithSource:@(copyKernelSource) options:options error:&error];
+  id<MTLLibrary> library = [device newLibraryWithSource:@(copyKernelSource) options:options error:&error];
   [options release];
   if (!library) {
     logPrintf(LogLevel::Error,
@@ -901,7 +911,7 @@ id<MTLComputePipelineState> copyPipelineForQueue(id<MTLCommandQueue> queue) {
     return nil;
   }
 
-  id<MTLComputePipelineState> pipeline = [queue.device newComputePipelineStateWithFunction:function error:&error];
+  id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:function error:&error];
   [function release];
   [library release];
   if (!pipeline) {
@@ -911,7 +921,7 @@ id<MTLComputePipelineState> copyPipelineForQueue(id<MTLCommandQueue> queue) {
               error ? [[error localizedDescription] UTF8String] : "(none)");
   }
   if (pipeline) {
-    copyPipelineCache[queue] = pipeline;
+    copyPipelineCache[device] = pipeline;
   }
   return pipeline;
 }

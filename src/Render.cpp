@@ -13,12 +13,15 @@
 #include "ofxPixels.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <exception>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace rimell {
 namespace {
@@ -29,6 +32,8 @@ enum class DebugView {
   HighlightMatte = 2,
   EdgeMask = 3,
 };
+
+constexpr unsigned int kMaxCpuRenderWorkers = 8;
 
 struct InstanceData {};
 
@@ -389,12 +394,20 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
   const bool debugEnabled = debugView != DebugView::Off;
   const bool bypass = params.mix <= 0.0001f;
   const auto started = std::chrono::steady_clock::now();
-  std::uint64_t pixelsWritten = 0;
-  bool aborted = false;
+  std::atomic<std::uint64_t> pixelsWritten{0};
+  std::atomic<bool> aborted{false};
+  const int renderHeight = renderWindow.y2 - renderWindow.y1;
+  const unsigned int availableWorkers =
+      std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 1u;
+  const unsigned int workerCount = std::max(
+      1u,
+      std::min<unsigned int>({availableWorkers, kMaxCpuRenderWorkers,
+                              static_cast<unsigned int>(std::max(1, renderHeight))}));
   logPrintf(LogLevel::Debug,
             "render.cpu",
-            "enter renderTyped pixelType=%s sourceData=%p sourceRowBytes=%d sourceBounds=[%d,%d,%d,%d] outputData=%p outputRowBytes=%d outputBounds=[%d,%d,%d,%d]",
+            "enter renderTyped pixelType=%s workers=%u sourceData=%p sourceRowBytes=%d sourceBounds=[%d,%d,%d,%d] outputData=%p outputRowBytes=%d outputBounds=[%d,%d,%d,%d]",
             pixelTag ? pixelTag : "unknown",
+            workerCount,
             source.data,
             source.rowBytes,
             source.bounds.x1,
@@ -408,78 +421,103 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
             output.bounds.x2,
             output.bounds.y2);
 
-  for (int y = renderWindow.y1; y < renderWindow.y2; ++y) {
-    if (y == renderWindow.y1) {
-      logPrintf(LogLevel::Trace,
-                "render.cpu",
-                "row begin pixelType=%s y=%d/%d",
-                pixelTag ? pixelTag : "unknown",
-                y,
-                renderWindow.y2 - 1);
-    }
-    if (gEffectSuite->abort(instance)) {
-      aborted = true;
-      logPrintf(LogLevel::Warn,
-                "render.cpu",
-                "abort requested pixelType=%s row=%d",
-                pixelTag ? pixelTag : "unknown",
-                y);
-      return kOfxStatOK;
-    }
-
-    for (int x = renderWindow.x1; x < renderWindow.x2; ++x) {
-      T *dst = pixelAddress<T>(output, x, y);
-      if (!dst) {
-        continue;
+  auto renderRows = [&](int yBegin, int yEnd, unsigned int workerIndex) {
+    std::uint64_t localPixels = 0;
+    for (int y = yBegin; y < yEnd && !aborted.load(std::memory_order_relaxed); ++y) {
+      if (workerIndex == 0 && y == yBegin) {
+        logPrintf(LogLevel::Trace,
+                  "render.cpu",
+                  "row begin pixelType=%s y=%d/%d",
+                  pixelTag ? pixelTag : "unknown",
+                  y,
+                  renderWindow.y2 - 1);
+      }
+      if (gEffectSuite->abort(instance)) {
+        aborted.store(true, std::memory_order_relaxed);
+        logPrintf(LogLevel::Warn,
+                  "render.cpu",
+                  "abort requested pixelType=%s row=%d",
+                  pixelTag ? pixelTag : "unknown",
+                  y);
+        break;
       }
 
-      const Pixel original = sampleNearest<T>(source, static_cast<float>(x), static_cast<float>(y));
-
-      if (debugEnabled) {
-        Pixel debugColor = original;
-        if (debugView == DebugView::HighlightMatte) {
-          const Pixel mapped = mappedSample<T>(source, static_cast<float>(x), static_cast<float>(y),
-                                               width, height, params);
-          const float h = highlightMatteAt(mapped, params);
-          debugColor = {h, h, h, 1.0f};
-        } else if (debugView == DebugView::EdgeMask) {
-          const float e = edgeMaskAt(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                     params);
-          debugColor = {e, e, e, 1.0f};
+      for (int x = renderWindow.x1; x < renderWindow.x2; ++x) {
+        T *dst = pixelAddress<T>(output, x, y);
+        if (!dst) {
+          continue;
         }
 
-        writePixelTyped(dst, debugColor);
-        ++pixelsWritten;
-        continue;
-      }
+        const Pixel original = sampleNearest<T>(source, static_cast<float>(x), static_cast<float>(y));
 
-      if (bypass) {
-        writePixelTyped(dst, original);
-        continue;
-      }
+        if (debugEnabled) {
+          Pixel debugColor = original;
+          if (debugView == DebugView::HighlightMatte) {
+            const Pixel mapped =
+                mappedSample<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, params);
+            const float h = highlightMatteAt(mapped, params);
+            debugColor = {h, h, h, 1.0f};
+          } else if (debugView == DebugView::EdgeMask) {
+            const float e =
+                edgeMaskAt(source, static_cast<float>(x), static_cast<float>(y), width, height, params);
+            debugColor = {e, e, e, 1.0f};
+          }
 
-      Pixel color = opticalBaseSample<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                         params);
-      color = edgeCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, color,
-                               params);
-      const Pixel add = lensAdditives<T>(source, static_cast<float>(x), static_cast<float>(y), width, height,
-                                         params, color);
-      color.r += add.r;
-      color.g += add.g;
-      color.b += add.b;
-      color = applyVignetteAndGuides(color, static_cast<float>(x - source.bounds.x1),
-                                     static_cast<float>(y - source.bounds.y1), width, height, params);
-      color = composeFinalPixel(original, color, params);
-      writePixelTyped(dst, color);
-      ++pixelsWritten;
+          writePixelTyped(dst, debugColor);
+          ++localPixels;
+          continue;
+        }
+
+        if (bypass) {
+          writePixelTyped(dst, original);
+          ++localPixels;
+          continue;
+        }
+
+        Pixel color =
+            opticalBaseSample<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, params);
+        color = edgeCharacter<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, color, params);
+        const Pixel add =
+            lensAdditives<T>(source, static_cast<float>(x), static_cast<float>(y), width, height, params, color);
+        color.r += add.r;
+        color.g += add.g;
+        color.b += add.b;
+        color = applyVignetteAndGuides(color,
+                                       static_cast<float>(x - source.bounds.x1),
+                                       static_cast<float>(y - source.bounds.y1),
+                                       width,
+                                       height,
+                                       params);
+        color = composeFinalPixel(original, color, params);
+        writePixelTyped(dst, color);
+        ++localPixels;
+      }
+      if (workerIndex == 0 && y == yBegin) {
+        logPrintf(LogLevel::Trace,
+                  "render.cpu",
+                  "row end pixelType=%s y=%d pixelsWritten=%llu",
+                  pixelTag ? pixelTag : "unknown",
+                  y,
+                  static_cast<unsigned long long>(localPixels));
+      }
     }
-    if (y == renderWindow.y1) {
-      logPrintf(LogLevel::Trace,
-                "render.cpu",
-                "row end pixelType=%s y=%d pixelsWritten=%llu",
-                pixelTag ? pixelTag : "unknown",
-                y,
-                static_cast<unsigned long long>(pixelsWritten));
+    pixelsWritten.fetch_add(localPixels, std::memory_order_relaxed);
+  };
+
+  if (workerCount == 1) {
+    renderRows(renderWindow.y1, renderWindow.y2, 0);
+  } else {
+    std::vector<std::thread> workers;
+    workers.reserve(workerCount);
+    for (unsigned int i = 0; i < workerCount; ++i) {
+      const int yBegin =
+          renderWindow.y1 + static_cast<int>((static_cast<long long>(renderHeight) * i) / workerCount);
+      const int yEnd =
+          renderWindow.y1 + static_cast<int>((static_cast<long long>(renderHeight) * (i + 1)) / workerCount);
+      workers.emplace_back(renderRows, yBegin, yEnd, i);
+    }
+    for (std::thread &worker : workers) {
+      worker.join();
     }
   }
 
@@ -487,21 +525,23 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
   const double elapsedMs =
       std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(elapsed).count();
   const double elapsedSec = elapsedMs > 0.0 ? elapsedMs / 1000.0 : 0.0;
+  const std::uint64_t totalPixelsWritten = pixelsWritten.load(std::memory_order_relaxed);
   const double megaPixelsPerSec = elapsedSec > 0.0 ?
-      (static_cast<double>(pixelsWritten) / 1000000.0) / elapsedSec : 0.0;
+      (static_cast<double>(totalPixelsWritten) / 1000000.0) / elapsedSec : 0.0;
   const LogLevel perfLevel = elapsedMs >= slowMsThreshold() ? LogLevel::Warn : LogLevel::Debug;
   logPrintf(perfLevel,
             "render.cpu",
-            "renderTyped pixelType=%s window=[%d,%d,%d,%d] pixels=%llu elapsed=%.3fms throughput=%.2fMPix/s aborted=%d",
+            "renderTyped pixelType=%s workers=%u window=[%d,%d,%d,%d] pixels=%llu elapsed=%.3fms throughput=%.2fMPix/s aborted=%d",
             pixelTag ? pixelTag : "unknown",
+            workerCount,
             renderWindow.x1,
             renderWindow.y1,
             renderWindow.x2,
             renderWindow.y2,
-            static_cast<unsigned long long>(pixelsWritten),
+            static_cast<unsigned long long>(totalPixelsWritten),
             elapsedMs,
             megaPixelsPerSec,
-            aborted ? 1 : 0);
+            aborted.load(std::memory_order_relaxed) ? 1 : 0);
 
   return kOfxStatOK;
 }
