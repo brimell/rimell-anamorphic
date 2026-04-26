@@ -122,6 +122,19 @@ struct MetalImageInfo {
   int renderY2;
 };
 
+struct CopyUniforms {
+  int sourceX1;
+  int sourceY1;
+  int sourceRowFloats;
+  int outputX1;
+  int outputY1;
+  int outputRowFloats;
+  int renderX1;
+  int renderY1;
+  int renderX2;
+  int renderY2;
+};
+
 MetalParams packParams(const RenderParams &params) {
   return {
       params.mix,
@@ -573,8 +586,56 @@ kernel void RimellAnamorphicKernel(const device float* src [[buffer(0)]], device
 }
 )metal";
 
+const char *copyKernelSource = R"metal(
+#include <metal_stdlib>
+using namespace metal;
+
+struct CopyUniforms {
+  int sourceX1;
+  int sourceY1;
+  int sourceRowFloats;
+  int outputX1;
+  int outputY1;
+  int outputRowFloats;
+  int renderX1;
+  int renderY1;
+  int renderX2;
+  int renderY2;
+};
+
+kernel void rimell_copy(
+  device const float *source [[buffer(0)]],
+  device float *output [[buffer(1)]],
+  constant CopyUniforms &u [[buffer(2)]],
+  uint2 gid [[thread_position_in_grid]]
+) {
+  int x = int(gid.x) + u.renderX1;
+  int y = int(gid.y) + u.renderY1;
+
+  if (x >= u.renderX2 || y >= u.renderY2) {
+    return;
+  }
+
+  int sx = x - u.sourceX1;
+  int sy = y - u.sourceY1;
+  int ox = x - u.outputX1;
+  int oy = y - u.outputY1;
+
+  int sidx = sy * u.sourceRowFloats + sx * 4;
+  int oidx = oy * u.outputRowFloats + ox * 4;
+
+  output[oidx + 0] = source[sidx + 0];
+  output[oidx + 1] = source[sidx + 1];
+  output[oidx + 2] = source[sidx + 2];
+  output[oidx + 3] = source[sidx + 3];
+}
+)metal";
+
 std::mutex pipelineMutex;
 std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> pipelineCache;
+
+std::mutex copyPipelineMutex;
+std::unordered_map<id<MTLCommandQueue>, id<MTLComputePipelineState>> copyPipelineCache;
 
 id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue) {
   std::lock_guard<std::mutex> lock(pipelineMutex);
@@ -613,6 +674,47 @@ id<MTLComputePipelineState> pipelineForQueue(id<MTLCommandQueue> queue) {
   }
   if (pipeline) {
     pipelineCache[queue] = pipeline;
+  }
+  return pipeline;
+}
+
+id<MTLComputePipelineState> copyPipelineForQueue(id<MTLCommandQueue> queue) {
+  std::lock_guard<std::mutex> lock(copyPipelineMutex);
+  const auto it = copyPipelineCache.find(queue);
+  if (it != copyPipelineCache.end()) {
+    return it->second;
+  }
+
+  NSError *error = nil;
+  MTLCompileOptions *options = [MTLCompileOptions new];
+  id<MTLLibrary> library = [queue.device newLibraryWithSource:@(copyKernelSource) options:options error:&error];
+  [options release];
+  if (!library) {
+    logPrintf(LogLevel::Error,
+              "render.gpu",
+              "failed to compile metal copy library error=%s",
+              error ? [[error localizedDescription] UTF8String] : "(none)");
+    return nil;
+  }
+
+  id<MTLFunction> function = [library newFunctionWithName:@"rimell_copy"];
+  if (!function) {
+    logMessage(LogLevel::Error, "render.gpu", "failed to find rimell_copy function");
+    [library release];
+    return nil;
+  }
+
+  id<MTLComputePipelineState> pipeline = [queue.device newComputePipelineStateWithFunction:function error:&error];
+  [function release];
+  [library release];
+  if (!pipeline) {
+    logPrintf(LogLevel::Error,
+              "render.gpu",
+              "failed to build copy pipeline error=%s",
+              error ? [[error localizedDescription] UTF8String] : "(none)");
+  }
+  if (pipeline) {
+    copyPipelineCache[queue] = pipeline;
   }
   return pipeline;
 }
@@ -704,6 +806,79 @@ OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image 
     logPrintf(LogLevel::Error,
               "render.gpu",
               "command buffer failed error=%s",
+              commandBuffer.error ? [[commandBuffer.error localizedDescription] UTF8String] : "(none)");
+  }
+  const OfxStatus status = failed ? kOfxStatGPURenderFailed : kOfxStatOK;
+  timer.setResult(ofxStatusToString(status));
+  return status;
+}
+
+OfxStatus renderMetalCopy(void *commandQueue, const Image &source, const Image &output,
+                          const OfxRectI &renderWindow) {
+  ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalCopy");
+  timer.setResult("in_progress");
+
+  if (!commandQueue || !source.data || !output.data) {
+    logMessage(LogLevel::Error, "render.gpu", "invalid queue/source/output pointers");
+    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+    return kOfxStatGPURenderFailed;
+  }
+
+  id<MTLCommandQueue> queue = reinterpret_cast<id<MTLCommandQueue>>(commandQueue);
+  id<MTLComputePipelineState> pipeline = copyPipelineForQueue(queue);
+  if (!pipeline) {
+    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+    return kOfxStatGPURenderFailed;
+  }
+
+  const int renderWidth = renderWindow.x2 - renderWindow.x1;
+  const int renderHeight = renderWindow.y2 - renderWindow.y1;
+  if (renderWidth <= 0 || renderHeight <= 0) {
+    logPrintf(LogLevel::Error,
+              "render.gpu",
+              "invalid render window width=%d height=%d",
+              renderWidth,
+              renderHeight);
+    timer.setResult(ofxStatusToString(kOfxStatErrValue));
+    return kOfxStatErrValue;
+  }
+
+  CopyUniforms uniforms{
+      source.bounds.x1,
+      source.bounds.y1,
+      source.rowBytes / static_cast<int>(sizeof(float)),
+      output.bounds.x1,
+      output.bounds.y1,
+      output.rowBytes / static_cast<int>(sizeof(float)),
+      renderWindow.x1,
+      renderWindow.y1,
+      renderWindow.x2,
+      renderWindow.y2,
+  };
+
+  id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+  id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+  [encoder setComputePipelineState:pipeline];
+  [encoder setBuffer:reinterpret_cast<id<MTLBuffer>>(source.data) offset:0 atIndex:0];
+  [encoder setBuffer:reinterpret_cast<id<MTLBuffer>>(output.data) offset:0 atIndex:1];
+  [encoder setBytes:&uniforms length:sizeof(uniforms) atIndex:2];
+
+  const NSUInteger threadWidth = pipeline.threadExecutionWidth;
+  const NSUInteger threadHeight = std::max<NSUInteger>(1, pipeline.maxTotalThreadsPerThreadgroup / threadWidth);
+  MTLSize threadsPerGroup = MTLSizeMake(threadWidth, threadHeight, 1);
+  MTLSize groups = MTLSizeMake((renderWidth + static_cast<int>(threadWidth) - 1) / threadWidth,
+                               (renderHeight + static_cast<int>(threadHeight) - 1) / threadHeight,
+                               1);
+  [encoder dispatchThreadgroups:groups threadsPerThreadgroup:threadsPerGroup];
+  [encoder endEncoding];
+  [commandBuffer commit];
+  [commandBuffer waitUntilCompleted];
+
+  const bool failed = commandBuffer.status == MTLCommandBufferStatusError;
+  if (failed) {
+    logPrintf(LogLevel::Error,
+              "render.gpu",
+              "copy command buffer failed error=%s",
               commandBuffer.error ? [[commandBuffer.error localizedDescription] UTF8String] : "(none)");
   }
   const OfxStatus status = failed ? kOfxStatGPURenderFailed : kOfxStatOK;
