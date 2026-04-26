@@ -6,7 +6,20 @@
 
 #include "ofxGPURender.h"
 
+#include <cstddef>
+
 namespace rimell {
+
+namespace {
+
+template <std::size_t N>
+void parentParams(OfxParamSetHandle paramSet, const char *parent, const char *const (&names)[N]) {
+  for (const char *name : names) {
+    setParamParent(paramSet, name, parent);
+  }
+}
+
+} // namespace
 
 OfxStatus describe(OfxImageEffectHandle effect) {
   OfxPropertySetHandle props = nullptr;
@@ -46,6 +59,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   OfxParamSetHandle paramSet = nullptr;
   gEffectSuite->getParamSet(effect, &paramSet);
 
+  // Top-level panel sections.
   addGroupParam(paramSet, "coreGroup", "Core", 1);
   addGroupParam(paramSet, "geometryGroup", "Geometry", 1);
   addGroupParam(paramSet, "highlightGroup", "Highlights / Flares", 0);
@@ -68,6 +82,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addGroupParam(paramSet, "framingAspectGroup", "Aspect Guides", 1);
   addGroupParam(paramSet, "framingLetterboxGroup", "Letterbox + Crop", 0);
 
+  // Core controls.
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
   addChoiceParam(paramSet, "debugView", "Debug View", 0, {"Off", "Source", "Highlight Matte", "Edge Mask"});
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, {"Draft", "Preview", "Final"},
@@ -90,6 +105,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   // Backward compatibility for older saved projects.
   addDoubleParam(paramSet, "halationExposureThreshold", "Legacy Halation Exposure Threshold", 0.5,
                  0.0, 1.0, 0.0, 1.0);
+  // Geometry controls.
   addDoubleParam(paramSet, "squeezeRatio", "Squeeze Ratio", 1.33, 1.0, 2.0, 1.0, 2.0);
   addDoubleParam(paramSet, "axisWarp", "Axis Warp", 0.0, 0.0, 1.0, 0.0, 1.0,
                  "Adds user-controlled horizontal/vertical separation on top of the selected lens identity.");
@@ -101,6 +117,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "virtualFocalLength", "Virtual Focal Length", 50.0, 10.0, 200.0, 18.0, 100.0);
   addDoubleParam(paramSet, "breathingScale", "Breathing Scale", 0.12, 0.0, 1.0, 0.0, 0.35);
 
+  // Highlights and flares.
+  addDoubleParam(paramSet, "bloomRadius", "Bloom Radius", 0.12, 0.0, 1.0, 0.0, 0.7);
   addDoubleParam(paramSet, "bokehStretch", "Anamorphic Bloom Shape", 0.15, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "bokehRotation", "Bloom Shape Rotation", 0.0, -45.0, 45.0, -15.0, 15.0);
   addDoubleParam(paramSet, "bokehEdgeFalloff", "Bloom Edge Falloff", 0.15, 0.0, 1.0, 0.0, 1.0);
@@ -123,7 +141,6 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "flareFalloff", "Flare Falloff", 3.0, 0.0, 12.0, 0.0, 6.0);
 
   addDoubleParam(paramSet, "veil", "Veil", 0.03, 0.0, 1.0, 0.0, 0.5);
-  addDoubleParam(paramSet, "bloomRadius", "Bloom Radius", 0.12, 0.0, 1.0, 0.0, 0.7);
   addDoubleParam(paramSet, "highlightCream", "Highlight Cream", 0.0, 0.0, 1.0, 0.0, 1.0);
   addDoubleParam(paramSet, "blackLiftProtection", "Black Lift Protection", 0.65, 0.0, 1.0, 0.0, 1.0);
 
@@ -135,6 +152,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "coatingWarmResponse", "Warm Coating Response", 0.75, 0.0, 3.0, 0.0, 1.5);
   addDoubleParam(paramSet, "coatingCoolResponse", "Cool Coating Response", 1.25, 0.0, 3.0, 0.0, 1.5);
 
+  // Edge treatment and chromatic aberration.
   addDoubleParam(paramSet, "edgeBlur", "Edge Blur", 0.05, 0.0, 1.0, 0.0, 0.7);
   addDoubleParam(paramSet, "tangentialSmear", "Tangential Smear", 0.03, 0.0, 1.0, 0.0, 0.8);
   addDoubleParam(paramSet, "radialFalloff", "Radial Falloff", 0.65, 0.0, 1.0, 0.0, 1.0);
@@ -178,6 +196,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addDoubleParam(paramSet, "edgeCompressionScale", "Edge Compression Scale", 0.16, 0.0, 3.0, 0.0, 1.0);
   addDoubleParam(paramSet, "centerVeilScale", "Center Veil Scale", 0.08, 0.0, 2.0, 0.0, 0.5);
 
+  // Framing and guide overlays.
   addBooleanParam(paramSet, "guidesEnabled", "Aspect Guides", 0);
   addChoiceParam(paramSet, "outputAspect", "Output Aspect", 1, {"2.00:1", "2.39:1", "2.66:1", "Custom"});
   addDoubleParam(paramSet, "customOutputAspect", "Custom Output Aspect", 2.39, 0.1, 8.0, 1.0, 4.0);
@@ -190,9 +209,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                   "Crops in by the smallest amount needed to keep warped edge samples inside the source image.");
 
   const char *core[] = {"mix", "debugView", "renderQuality", "lookPreset"};
-  for (const char *name : core) {
-    setParamParent(paramSet, name, "coreGroup");
-  }
+  parentParams(paramSet, "coreGroup", core);
 
   setParamParent(paramSet, "halationExposureThreshold", "coreGroup");
   {
@@ -207,99 +224,67 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   }
 
   const char *geometrySubGroups[] = {"geometryModeGroup", "geometryShapeGroup", "geometryFocusGroup"};
-  for (const char *name : geometrySubGroups) {
-    setParamParent(paramSet, name, "geometryGroup");
-  }
+  parentParams(paramSet, "geometryGroup", geometrySubGroups);
 
   const char *geometryMode[] = {"inputMode", "squeezeMode", "anamorphicTransfer",
                                 "lensIdentity", "squeezeRatio", "centerProtection", "edgeCompressionStart",
                                 "horizontalFovBoost"};
-  for (const char *name : geometryMode) {
-    setParamParent(paramSet, name, "geometryModeGroup");
-  }
+  parentParams(paramSet, "geometryModeGroup", geometryMode);
 
   const char *geometryShape[] = {"axisWarp", "barrel", "mustache", "verticalCompensation",
                                  "verticalCompensationScale", "edgeCompression", "edgeCompressionScale"};
-  for (const char *name : geometryShape) {
-    setParamParent(paramSet, name, "geometryShapeGroup");
-  }
+  parentParams(paramSet, "geometryShapeGroup", geometryShape);
 
   const char *geometryFocus[] = {"virtualFocalLength", "focusDistance", "breathingAmount",
                                  "breathingScale", "closeFocusMumps", "faceWidthCompensation", "mumpsScale"};
-  for (const char *name : geometryFocus) {
-    setParamParent(paramSet, name, "geometryFocusGroup");
-  }
+  parentParams(paramSet, "geometryFocusGroup", geometryFocus);
 
   const char *highlightSubGroups[] = {"highlightBloomGroup", "highlightFlareGroup",
                                       "highlightGhostGroup", "highlightToneGroup"};
-  for (const char *name : highlightSubGroups) {
-    setParamParent(paramSet, name, "highlightGroup");
-  }
+  parentParams(paramSet, "highlightGroup", highlightSubGroups);
 
   const char *highlightBloom[] = {"bloomRadius", "bokehStretch", "bokehRotation", "bokehEdgeFalloff",
                                   "bokehStretchScale", "bloomPixelScale", "bloomThresholdScale",
                                   "bloomRings", "bloomSamplesPerRing", "bloomEdgeKeepScale",
                                   "bloomVeilScale", "bloomCreamScale"};
-  for (const char *name : highlightBloom) {
-    setParamParent(paramSet, name, "highlightBloomGroup");
-  }
+  parentParams(paramSet, "highlightBloomGroup", highlightBloom);
 
   const char *highlightFlare[] = {"flareIntensity", "flareLength", "flareColour", "flareThreshold",
                                   "flareAngle", "flareStepDensity", "flareSpanScale", "flareFalloff"};
-  for (const char *name : highlightFlare) {
-    setParamParent(paramSet, name, "highlightFlareGroup");
-  }
+  parentParams(paramSet, "highlightFlareGroup", highlightFlare);
 
   const char *highlightGhost[] = {"ghostCount", "ghostSpread", "ghostTint", "ghostIntensity",
                                   "coatingStyle", "coatingWarmResponse", "coatingCoolResponse"};
-  for (const char *name : highlightGhost) {
-    setParamParent(paramSet, name, "highlightGhostGroup");
-  }
+  parentParams(paramSet, "highlightGhostGroup", highlightGhost);
 
   const char *highlightTone[] = {"veil", "highlightCream", "blackLiftProtection", "centerVeilScale"};
-  for (const char *name : highlightTone) {
-    setParamParent(paramSet, name, "highlightToneGroup");
-  }
+  parentParams(paramSet, "highlightToneGroup", highlightTone);
 
   const char *edgeSubGroups[] = {"edgeBlurGroup", "edgeCaGroup", "edgeVignetteGroup"};
-  for (const char *name : edgeSubGroups) {
-    setParamParent(paramSet, name, "edgeGroup");
-  }
+  parentParams(paramSet, "edgeGroup", edgeSubGroups);
 
   const char *edgeBlur[] = {"edgeBlur", "edgeBlurPixels", "tangentialSmear", "smearPixels",
                             "horizontalSmear", "verticalSharpness", "radialFalloff", "fieldCurvature",
                             "fieldCurvaturePixels"};
-  for (const char *name : edgeBlur) {
-    setParamParent(paramSet, name, "edgeBlurGroup");
-  }
+  parentParams(paramSet, "edgeBlurGroup", edgeBlur);
 
   const char *edgeCa[] = {"lateralCA", "lateralCAPixelScale", "longitudinalCA", "edgeOnlyCA"};
-  for (const char *name : edgeCa) {
-    setParamParent(paramSet, name, "edgeCaGroup");
-  }
+  parentParams(paramSet, "edgeCaGroup", edgeCa);
 
   const char *edgeVignette[] = {"ovalVignette", "ovalVignetteScale", "vignetteAsymmetry",
                                 "vignetteAsymmetryScale", "cornerBias", "catEyeStrength",
                                 "catEyeDimScale", "bokehVignette", "bokehVignetteDimScale"};
-  for (const char *name : edgeVignette) {
-    setParamParent(paramSet, name, "edgeVignetteGroup");
-  }
+  parentParams(paramSet, "edgeVignetteGroup", edgeVignette);
 
   const char *framingSubGroups[] = {"framingAspectGroup", "framingLetterboxGroup"};
-  for (const char *name : framingSubGroups) {
-    setParamParent(paramSet, name, "framingGroup");
-  }
+  parentParams(paramSet, "framingGroup", framingSubGroups);
 
   const char *framingAspect[] = {"guidesEnabled", "outputAspect", "customOutputAspect",
                                  "safeArea", "guideAspectStrength", "guideSafeStrength"};
-  for (const char *name : framingAspect) {
-    setParamParent(paramSet, name, "framingAspectGroup");
-  }
+  parentParams(paramSet, "framingAspectGroup", framingAspect);
 
   const char *framingLetterbox[] = {"letterboxPreview", "letterboxOpacity", "autoEdgeCrop"};
-  for (const char *name : framingLetterbox) {
-    setParamParent(paramSet, name, "framingLetterboxGroup");
-  }
+  parentParams(paramSet, "framingLetterboxGroup", framingLetterbox);
 
   return kOfxStatOK;
 }
