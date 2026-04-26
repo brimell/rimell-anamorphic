@@ -981,9 +981,15 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
               if (!getImageString(depthImageHandle, kOfxImageEffectPropPixelDepth, &depthBitDepth) ||
                   !getImageString(depthImageHandle, kOfxImageEffectPropComponents, &depthComponents) ||
                   !parseDepthBitDepth(depthBitDepth, &depthImage.bitDepth) ||
-                  !parseDepthComponents(depthComponents, &depthImage.components)) {
+                  !parseDepthComponents(depthComponents, &depthImage.components) ||
+                  !stringsMatch(depthBitDepth, kOfxBitDepthFloat) ||
+                  !stringsMatch(depthComponents, kOfxImageComponentRGBA)) {
                 hasDepth = false;
-                logMessage(LogLevel::Warn, "render", "depth clip present but format unsupported, depth disabled");
+                logPrintf(LogLevel::Warn,
+                          "render",
+                          "depth clip present but format unsupported, depth disabled bitDepth=%s components=%s",
+                          depthBitDepth ? depthBitDepth : "(null)",
+                          depthComponents ? depthComponents : "(null)");
               } else {
                 const int depthBpp = bytesPerChannel(depthImage.bitDepth) *
                                      (depthImage.components == DepthComponents::RGBA ? 4 : 1);
