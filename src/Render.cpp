@@ -31,6 +31,9 @@ enum class DebugView {
   Source = 1,
   HighlightMatte = 2,
   EdgeMask = 3,
+  MetalIdentity = 4,
+  MetalBilinear = 5,
+  MetalBasicGeometry = 6,
 };
 
 constexpr unsigned int kMaxCpuRenderWorkers = 8;
@@ -76,6 +79,12 @@ bool metalRuntimeAvailable() {
 #else
   return false;
 #endif
+}
+
+bool isMetalDiagnosticDebugView(int debugView) {
+  return debugView == static_cast<int>(DebugView::MetalIdentity) ||
+         debugView == static_cast<int>(DebugView::MetalBilinear) ||
+         debugView == static_cast<int>(DebugView::MetalBasicGeometry);
 }
 
 template <typename T>
@@ -739,10 +748,10 @@ float roiPaddingPixels(const RenderParams &params, float referenceExtent) {
   return std::max({flarePadding, bloomPadding, edgePadding, chromaticPadding, 2.0f});
 }
 
-bool canUseMetalForThisRender(const RenderParams &params, bool hostMetal, bool hasSource,
-                              const Image &source, const Image &output, const char *sourceBitDepth,
-                              const char *sourceComponents, const char *outputBitDepth,
-                              const char *outputComponents, void *commandQueue) {
+bool canUseMetalImagesForThisRender(const RenderParams &params, bool hostMetal, bool hasSource,
+                                    const Image &source, const Image &output, const char *sourceBitDepth,
+                                    const char *sourceComponents, const char *outputBitDepth,
+                                    const char *outputComponents, void *commandQueue) {
   if (!hostMetal || !hasSource || !commandQueue || !sourceBitDepth || !sourceComponents ||
       !outputBitDepth || !outputComponents) {
     return false;
@@ -767,6 +776,56 @@ bool canUseMetalForThisRender(const RenderParams &params, bool hostMetal, bool h
   }
 
   return validateMetalImageLayout(source) && validateMetalImageLayout(output);
+}
+
+bool canUseMetalCopyForThisRender(const RenderParams &params, bool hostMetal, bool hasSource,
+                                  const Image &source, const Image &output, const char *sourceBitDepth,
+                                  const char *sourceComponents, const char *outputBitDepth,
+                                  const char *outputComponents, void *commandQueue) {
+  if (!canUseMetalImagesForThisRender(params,
+                                      hostMetal,
+                                      hasSource,
+                                      source,
+                                      output,
+                                      sourceBitDepth,
+                                      sourceComponents,
+                                      outputBitDepth,
+                                      outputComponents,
+                                      commandQueue)) {
+    return false;
+  }
+
+  return params.debugView == static_cast<int>(DebugView::Source) ||
+         (params.debugView == static_cast<int>(DebugView::Off) && params.mix <= 0.0001f);
+}
+
+bool canUseMetalForThisRender(const RenderParams &params, bool hostMetal, bool hasSource,
+                              const Image &source, const Image &output, const char *sourceBitDepth,
+                              const char *sourceComponents, const char *outputBitDepth,
+                              const char *outputComponents, void *commandQueue) {
+  if (!canUseMetalImagesForThisRender(params,
+                                      hostMetal,
+                                      hasSource,
+                                      source,
+                                      output,
+                                      sourceBitDepth,
+                                      sourceComponents,
+                                      outputBitDepth,
+                                      outputComponents,
+                                      commandQueue)) {
+    return false;
+  }
+
+  if (params.debugView != static_cast<int>(DebugView::Off) &&
+      !isMetalDiagnosticDebugView(params.debugView)) {
+    return false;
+  }
+
+  if (params.mix <= 0.0001f && !isMetalDiagnosticDebugView(params.debugView)) {
+    return false;
+  }
+
+  return true;
 }
 
 } // namespace
@@ -936,26 +995,49 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
                                                              source.bounds.y2 - source.bounds.y1, params);
               }
               void *metalCommandQueue = hostMetalQueue;
-              const bool useMetal = canUseMetalForThisRender(params,
-                                                            hostMetal,
-                                                            hasSource,
-                                                            source,
-                                                            output,
-                                                            sourceBitDepth,
-                                                            sourceComponents,
-                                                            outputBitDepth,
-                                                            outputComponents,
-                                                            metalCommandQueue);
+              const bool useMetalCopy = canUseMetalCopyForThisRender(params,
+                                                                     hostMetal,
+                                                                     hasSource,
+                                                                     source,
+                                                                     output,
+                                                                     sourceBitDepth,
+                                                                     sourceComponents,
+                                                                     outputBitDepth,
+                                                                     outputComponents,
+                                                                     metalCommandQueue);
+              const bool useMetal = !useMetalCopy &&
+                                    canUseMetalForThisRender(params,
+                                                             hostMetal,
+                                                             hasSource,
+                                                             source,
+                                                             output,
+                                                             sourceBitDepth,
+                                                             sourceComponents,
+                                                             outputBitDepth,
+                                                             outputComponents,
+                                                             metalCommandQueue);
               logPrintf(LogLevel::Info,
                         "render",
-                        "render path source=%d sourceStorage=%s outputStorage=%s backend=%s metal=%d outputBitDepth=%s",
+                        "render path source=%d sourceStorage=%s outputStorage=%s backend=%s metal=%d metalCopy=%d outputBitDepth=%s",
                         hasSource ? 1 : 0,
                         imageStorageName(source.storage),
                         imageStorageName(output.storage),
                         processingBackendName(params.processingBackend),
                         useMetal ? 1 : 0,
+                        useMetalCopy ? 1 : 0,
                         outputBitDepth ? outputBitDepth : "(null)");
-              if (useMetal) {
+              if (useMetalCopy) {
+                logPrintf(LogLevel::Warn,
+                          "render.gpu",
+                          "USING INSTALLED METAL BUILD marker=2026-04-26-copy-test renderQuality=%d debugView=%d mix=%.3f kernel=rimell_copy_float",
+                          params.renderQuality,
+                          params.debugView,
+                          params.mix);
+                ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalCopyFloat");
+                timer.setResult("in_progress");
+                status = renderMetalCopyFloat(metalCommandQueue, source, output, renderWindow);
+                timer.setResult(ofxStatusToString(status));
+              } else if (useMetal) {
                 ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalFloat");
                 timer.setResult("in_progress");
                 status = renderMetalFloat(metalCommandQueue, source, output, renderWindow, params);

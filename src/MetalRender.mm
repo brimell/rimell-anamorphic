@@ -6,6 +6,7 @@
 #import <Metal/Metal.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <dlfcn.h>
 #include <sys/stat.h>
@@ -368,20 +369,44 @@ void releasePipelineCache(MapT &cache) {
 std::mutex pipelineMutex;
 std::unordered_map<DeviceKey, id<MTLComputePipelineState>> floatPipelineCache;
 std::unordered_map<DeviceKey, id<MTLComputePipelineState>> copyPipelineCache;
+std::unordered_map<DeviceKey, id<MTLComputePipelineState>> identityPipelineCache;
+std::unordered_map<DeviceKey, id<MTLComputePipelineState>> bilinearPipelineCache;
+std::unordered_map<DeviceKey, id<MTLComputePipelineState>> basicGeometryPipelineCache;
 
 DeviceKey deviceKey(id<MTLDevice> device) {
   return (__bridge const void *)device;
 }
 
-id<MTLComputePipelineState> pipelineForDevice(id<MTLDevice> device) {
+id<MTLComputePipelineState> diagnosticPipelineForDevice(id<MTLDevice> device,
+                                                        int debugView,
+                                                        const char **kernelName) {
   if (!device) {
     return nil;
   }
 
+  const char *functionName = nullptr;
+  std::unordered_map<DeviceKey, id<MTLComputePipelineState>> *cache = nullptr;
+  if (debugView == 4) {
+    functionName = "RimellIdentityFloat";
+    cache = &identityPipelineCache;
+  } else if (debugView == 5) {
+    functionName = "RimellBilinearFloat";
+    cache = &bilinearPipelineCache;
+  } else if (debugView == 6) {
+    functionName = "RimellBasicGeometryFloat";
+    cache = &basicGeometryPipelineCache;
+  } else {
+    functionName = "RimellAnamorphicFloat";
+    cache = &floatPipelineCache;
+  }
+  if (kernelName) {
+    *kernelName = functionName;
+  }
+
   std::lock_guard<std::mutex> lock(pipelineMutex);
   const DeviceKey key = deviceKey(device);
-  const auto it = floatPipelineCache.find(key);
-  if (it != floatPipelineCache.end()) {
+  const auto it = cache->find(key);
+  if (it != cache->end()) {
     return it->second;
   }
 
@@ -391,9 +416,11 @@ id<MTLComputePipelineState> pipelineForDevice(id<MTLDevice> device) {
   }
 
   NSError *error = nil;
-  id<MTLFunction> function = [library newFunctionWithName:@"RimellAnamorphicFloat"];
+  NSString *name = [[NSString alloc] initWithUTF8String:functionName];
+  id<MTLFunction> function = [library newFunctionWithName:name];
+  [name release];
   if (!function) {
-    logMessage(LogLevel::Error, "render.gpu", "failed to find RimellAnamorphicFloat in metallib");
+    logPrintf(LogLevel::Error, "render.gpu", "failed to find %s in metallib", functionName);
     [library release];
     return nil;
   }
@@ -404,12 +431,13 @@ id<MTLComputePipelineState> pipelineForDevice(id<MTLDevice> device) {
   if (!pipeline) {
     logPrintf(LogLevel::Error,
               "render.gpu",
-              "failed to build float pipeline error=%s",
+              "failed to build %s pipeline error=%s",
+              functionName,
               error ? [[error localizedDescription] UTF8String] : "(none)");
     return nil;
   }
 
-  floatPipelineCache[key] = pipeline;
+  (*cache)[key] = pipeline;
   return pipeline;
 }
 
@@ -505,7 +533,8 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
       return kOfxStatGPURenderFailed;
     }
 
-    id<MTLComputePipelineState> pipeline = pipelineForDevice(device);
+    const char *kernelName = nullptr;
+    id<MTLComputePipelineState> pipeline = diagnosticPipelineForDevice(device, params.debugView, &kernelName);
     if (!pipeline) {
       timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
       return kOfxStatGPURenderFailed;
@@ -551,6 +580,13 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
     }
 
     MetalParams packedParams = packParams(params);
+    logPrintf(LogLevel::Warn,
+              "render.gpu",
+              "USING INSTALLED METAL BUILD marker=2026-04-26-copy-test renderQuality=%d debugView=%d mix=%.3f kernel=%s",
+              params.renderQuality,
+              params.debugView,
+              params.mix,
+              kernelName ? kernelName : "(null)");
     MetalImageInfo info{
         source.bounds.x1,
         source.bounds.y1,
@@ -617,6 +653,7 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
     const MTLSize threadsPerGroup = MTLSizeMake(threadWidth, threadHeight, 1);
     const MTLSize gridSize = MTLSizeMake(static_cast<NSUInteger>(renderWidth), static_cast<NSUInteger>(renderHeight), 1);
 
+    const auto encodeStart = std::chrono::steady_clock::now();
     [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadsPerGroup];
     [encoder endEncoding];
     [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
@@ -630,6 +667,12 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
       [infoBuffer release];
     }];
     [commandBuffer commit];
+    const auto encodeEnd = std::chrono::steady_clock::now();
+    logPrintf(LogLevel::Warn,
+              "render.gpu",
+              "encode submit time %.3f ms kernel=%s",
+              std::chrono::duration<double, std::milli>(encodeEnd - encodeStart).count(),
+              kernelName ? kernelName : "(null)");
     timer.setResult(ofxStatusToString(kOfxStatOK));
     return kOfxStatOK;
   }
@@ -803,6 +846,7 @@ OfxStatus renderMetalCopyFloat(void *commandQueue, const Image &source, const Im
     const MTLSize threadsPerGroup = MTLSizeMake(threadWidth, threadHeight, 1);
     const MTLSize gridSize = MTLSizeMake(static_cast<NSUInteger>(renderWidth), static_cast<NSUInteger>(renderHeight), 1);
 
+    const auto encodeStart = std::chrono::steady_clock::now();
     [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadsPerGroup];
     [encoder endEncoding];
     [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
@@ -815,6 +859,11 @@ OfxStatus renderMetalCopyFloat(void *commandQueue, const Image &source, const Im
       [uniformsBuffer release];
     }];
     [commandBuffer commit];
+    const auto encodeEnd = std::chrono::steady_clock::now();
+    logPrintf(LogLevel::Warn,
+              "render.gpu",
+              "encode submit time %.3f ms kernel=rimell_copy_float",
+              std::chrono::duration<double, std::milli>(encodeEnd - encodeStart).count());
     timer.setResult(ofxStatusToString(kOfxStatOK));
     return kOfxStatOK;
   }
@@ -824,6 +873,9 @@ void clearMetalPipelineCaches() {
   std::lock_guard<std::mutex> lock(pipelineMutex);
   releasePipelineCache(floatPipelineCache);
   releasePipelineCache(copyPipelineCache);
+  releasePipelineCache(identityPipelineCache);
+  releasePipelineCache(bilinearPipelineCache);
+  releasePipelineCache(basicGeometryPipelineCache);
 }
 
 } // namespace rimell

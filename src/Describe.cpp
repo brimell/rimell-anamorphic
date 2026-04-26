@@ -58,7 +58,17 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   // Core controls.
   addStringParam(paramSet, "coreHeader", "=== Core ===");
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
-  addChoiceParam(paramSet, "debugView", "Debug View", 0, {"Off", "Source", "Highlight Matte", "Edge Mask"});
+  addChoiceParam(paramSet,
+                 "debugView",
+                 "Debug View",
+                 0,
+                 {"Off",
+                  "Source",
+                  "Highlight Matte",
+                  "Edge Mask",
+                  "Metal Identity",
+                  "Metal Bilinear",
+                  "Metal Basic Geometry"});
   addChoiceParam(paramSet, "processingBackend", "Processing Backend", kBackendAuto,
                  {"CPU", "Auto", "Metal Experimental"},
                  "Auto is the default on Apple and may use Metal only when the render format and host state are known-good.");

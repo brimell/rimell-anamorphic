@@ -622,7 +622,7 @@ void applyDebugNeutral(RenderParams &params) {
 
 RenderParams clampRenderParams(RenderParams params) {
   params.mix = clampValue(params.mix, 0.0f, 1.0f);
-  params.debugView = clampValue(params.debugView, 0, 3);
+  params.debugView = clampValue(params.debugView, 0, 6);
   params.renderQuality = clampValue(params.renderQuality, 0, 3);
   params.processingBackend = clampValue(params.processingBackend, static_cast<int>(kBackendCpu),
                                         static_cast<int>(kBackendMetalExperimental));

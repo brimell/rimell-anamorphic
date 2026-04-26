@@ -159,6 +159,10 @@ struct LensMap {
   float transferAmount;
 };
 
+struct BasicLensMap {
+  float2 sampleCoord;
+};
+
 constant float kPi = 3.14159265358979323846f;
 
 float clamp01(float v) { return clamp(v, 0.0f, 1.0f); }
@@ -300,6 +304,70 @@ float2 lensMapToSourcePixel(LensMap m, constant I &info) {
   float2 pixel = float2(cx + m.sampleCoord.x * max(1.0f, float(info.width) * 0.5f),
                         cy + m.sampleCoord.y * max(1.0f, float(info.height) * 0.5f));
   return finiteOr2(pixel, float2(cx, cy));
+}
+
+float2 sampleCoordToSourcePixel(float2 sampleCoord, constant I &info) {
+  float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
+  float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
+  float2 pixel = float2(cx + sampleCoord.x * max(1.0f, float(info.width) * 0.5f),
+                        cy + sampleCoord.y * max(1.0f, float(info.height) * 0.5f));
+  return finiteOr2(pixel, float2(cx, cy));
+}
+
+BasicLensMap buildBasicLensMap(float dstX, float dstY, constant I &info, constant P &p) {
+  float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
+  float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
+  float halfW = max(1.0f, float(info.width) * 0.5f);
+  float halfH = max(1.0f, float(info.height) * 0.5f);
+  float aspect = halfW / halfH;
+  float2 spherical = float2((dstX - cx) / halfW, (dstY - cy) / halfH);
+  spherical = finiteOr2(spherical, float2(0.0f, 0.0f));
+  float breathe = 1.0f + p.breathingAmount * (0.5f - p.focusDistance) * p.breathingScale;
+  spherical /= max(0.01f, breathe);
+  spherical = finiteOr2(spherical, float2(0.0f, 0.0f));
+  float viewedX = spherical.x * aspect;
+  float viewedY = spherical.y;
+  float radius = finiteOr(sqrt(viewedX * viewedX + viewedY * viewedY), 0.0f);
+  float centerRadius = 0.28f + clamp01(p.centerProtection) * 0.42f;
+  float warpMask = smoothstepf(centerRadius, centerRadius + 0.2f, radius);
+  bool realAnamorphicUtility = p.inputMode == 1;
+  bool useUtilityGeometry = p.inputMode == 1 || p.inputMode == 2;
+  float transferAmount = useUtilityGeometry ? 1.0f : clamp01(p.anamorphicTransfer) * warpMask;
+  float axisWarp = realAnamorphicUtility ? clamp01(p.axisWarp) : lensIdentityAxisWarp(p);
+  float axisDelta = safeSqueezeDelta(p);
+  float squeezeShape = 1.0f + axisDelta * (0.6f + axisWarp * 0.7f);
+  float axisY = spherical.y / max(0.1f, squeezeShape);
+  float axisRadius2 = spherical.x * spherical.x + axisY * axisY;
+  float axisRadius4 = axisRadius2 * axisRadius2;
+  float scaleX = 1.0f + (p.barrel + axisWarp * axisDelta * 0.18f) * axisRadius2 + (p.mustache + axisWarp * 0.035f) * axisRadius4;
+  float scaleY = 1.0f + (p.barrel - axisWarp * axisDelta * 0.07f) * axisRadius2 + p.mustache * axisRadius4;
+  float2 anamorphic = float2(spherical.x * scaleX, spherical.y * scaleY);
+  anamorphic = finiteOr2(anamorphic, spherical);
+  anamorphic.y *= 1.0f - p.verticalCompensation * axisRadius2 * p.verticalCompensationScale;
+  if (useUtilityGeometry) {
+    float ratio = max(0.1f, p.squeezeRatio);
+    if (p.squeezeMode == 1) {
+      anamorphic.x *= ratio;
+    } else if (p.squeezeMode == 2) {
+      anamorphic.x /= ratio;
+    }
+  } else {
+    float edge = smoothstepf(max(0.0f, p.edgeCompressionStart), 1.0f, abs(spherical.x));
+    float edgeCompression = (p.edgeCompression * p.edgeCompressionScale + axisWarp * axisDelta * 0.08f) * edge *
+                            edge * (1.0f - abs(spherical.y) * 0.25f);
+    anamorphic.x -= (anamorphic.x < 0.0f ? -1.0f : 1.0f) * edgeCompression;
+  }
+  float fovScale = 1.0f + p.horizontalFovBoost * (70.0f / max(10.0f, p.virtualFocalLength));
+  anamorphic.x /= max(0.05f, fovScale);
+  float mumpsMask = exp(-(radius * radius) / 0.22f);
+  float mumps = (p.closeFocusMumps - p.faceWidthCompensation) * smoothstepf(1.0f, 0.0f, p.focusDistance) * p.mumpsScale *
+                mumpsMask;
+  anamorphic.x /= max(0.1f, 1.0f + mumps * (1.0f - clamp01(p.centerProtection) * 0.35f));
+
+  BasicLensMap m;
+  m.sampleCoord = float2(lerpf(spherical.x, anamorphic.x, transferAmount), lerpf(spherical.y, anamorphic.y, transferAmount));
+  m.sampleCoord = finiteOr2(m.sampleCoord, spherical);
+  return m;
 }
 
 float2 applyEdgeCrop(float dstX, float dstY, constant I &info, constant P &p) {
@@ -665,6 +733,67 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
                     finiteOr(outPixel.z, original.z),
                     original.w);
   writePixel(dst, outIndex, outPixel, original);
+}
+
+kernel void RimellIdentityFloat(device const float *src [[buffer(0)]],
+                                device float *dst [[buffer(1)]],
+                                constant P &p [[buffer(2)]],
+                                constant I &info [[buffer(3)]],
+                                uint2 gid [[thread_position_in_grid]]) {
+  int x = info.renderX1 + int(gid.x);
+  int y = info.renderY1 + int(gid.y);
+  if (x >= info.renderX2 || y >= info.renderY2) {
+    return;
+  }
+
+  int sx = clamp(x, info.sourceX1, info.sourceX2 - 1) - info.sourceX1;
+  int sy = clamp(y, info.sourceY1, info.sourceY2 - 1) - info.sourceY1;
+  int ox = x - info.outputX1;
+  int oy = y - info.outputY1;
+  int sidx = sy * info.sourceRowFloats + sx * 4;
+  int oidx = oy * info.outputRowFloats + ox * 4;
+
+  dst[oidx + 0] = src[sidx + 0];
+  dst[oidx + 1] = src[sidx + 1];
+  dst[oidx + 2] = src[sidx + 2];
+  dst[oidx + 3] = src[sidx + 3];
+}
+
+kernel void RimellBilinearFloat(const device PixelChannel *src [[buffer(0)]],
+                                device PixelChannel *dst [[buffer(1)]],
+                                constant P &p [[buffer(2)]],
+                                constant I &info [[buffer(3)]],
+                                uint2 gid [[thread_position_in_grid]]) {
+  int x = info.renderX1 + int(gid.x);
+  int y = info.renderY1 + int(gid.y);
+  if (x >= info.renderX2 || y >= info.renderY2) {
+    return;
+  }
+
+  int outIndex = (y - info.outputY1) * info.outputRowFloats + (x - info.outputX1) * 4;
+  float4 original = sampleNearest(src, info, float(x), float(y));
+  float4 color = sampleBilinear(src, info, float(x), float(y));
+  writePixel(dst, outIndex, color, original);
+}
+
+kernel void RimellBasicGeometryFloat(const device PixelChannel *src [[buffer(0)]],
+                                     device PixelChannel *dst [[buffer(1)]],
+                                     constant P &p [[buffer(2)]],
+                                     constant I &info [[buffer(3)]],
+                                     uint2 gid [[thread_position_in_grid]]) {
+  int x = info.renderX1 + int(gid.x);
+  int y = info.renderY1 + int(gid.y);
+  if (x >= info.renderX2 || y >= info.renderY2) {
+    return;
+  }
+
+  int outIndex = (y - info.outputY1) * info.outputRowFloats + (x - info.outputX1) * 4;
+  float4 original = sampleNearest(src, info, float(x), float(y));
+  float2 cropped = applyEdgeCrop(float(x), float(y), info, p);
+  BasicLensMap lm = buildBasicLensMap(cropped.x, cropped.y, info, p);
+  float2 sp = sampleCoordToSourcePixel(lm.sampleCoord, info);
+  float4 color = sampleBilinear(src, info, sp.x, sp.y);
+  writePixel(dst, outIndex, color, original);
 }
 
 kernel void rimell_copy_float(device const float *source [[buffer(0)]],
