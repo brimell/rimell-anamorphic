@@ -564,14 +564,6 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
         renderWindow.y2,
     };
 
-    id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
-    id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
-    if (!commandBuffer || !encoder) {
-      logMessage(LogLevel::Error, "render.gpu", "failed to create Metal command buffer/encoder");
-      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-      return kOfxStatGPURenderFailed;
-    }
-
     id<MTLBuffer> paramsBuffer = [device newBufferWithBytes:&packedParams
                                                      length:sizeof(packedParams)
                                                     options:MTLResourceStorageModeShared];
@@ -580,6 +572,24 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
                                                   options:MTLResourceStorageModeShared];
     if (!paramsBuffer || !infoBuffer) {
       logMessage(LogLevel::Error, "render.gpu", "failed to create Metal uniform buffers");
+      [paramsBuffer release];
+      [infoBuffer release];
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+    if (!commandBuffer) {
+      logMessage(LogLevel::Error, "render.gpu", "failed to create Metal command buffer");
+      [paramsBuffer release];
+      [infoBuffer release];
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+    if (!encoder) {
+      logMessage(LogLevel::Error, "render.gpu", "failed to create Metal command encoder");
       [paramsBuffer release];
       [infoBuffer release];
       timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
@@ -739,19 +749,27 @@ OfxStatus renderMetalCopyFloat(void *commandQueue, const Image &source, const Im
         renderWindow.y2,
     };
 
-    id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
-    id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
-    if (!commandBuffer || !encoder) {
-      logMessage(LogLevel::Error, "render.gpu", "failed to create Metal copy command buffer/encoder");
-      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-      return kOfxStatGPURenderFailed;
-    }
-
     id<MTLBuffer> uniformsBuffer = [device newBufferWithBytes:&uniforms
                                                        length:sizeof(uniforms)
                                                       options:MTLResourceStorageModeShared];
     if (!uniformsBuffer) {
       logMessage(LogLevel::Error, "render.gpu", "failed to create Metal copy uniform buffer");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+    if (!commandBuffer) {
+      logMessage(LogLevel::Error, "render.gpu", "failed to create Metal copy command buffer");
+      [uniformsBuffer release];
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+    if (!encoder) {
+      logMessage(LogLevel::Error, "render.gpu", "failed to create Metal copy command encoder");
+      [uniformsBuffer release];
       timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
       return kOfxStatGPURenderFailed;
     }
