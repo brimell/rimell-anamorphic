@@ -3,6 +3,7 @@
 #include "Diagnostics.h"
 #include "HostSuites.h"
 #include "MetalRender.h"
+#include "ParameterLogic.h"
 #include "Render.h"
 
 #include "ofxCore.h"
@@ -23,6 +24,182 @@
 
 namespace rimell {
 namespace {
+
+OfxParamHandle getParamHandle(OfxParamSetHandle paramSet, const char *name) {
+  if (!paramSet || !name || !gParameterSuite) {
+    return nullptr;
+  }
+
+  OfxParamHandle handle = nullptr;
+  return gParameterSuite->paramGetHandle(paramSet, name, &handle, nullptr) == kOfxStatOK ? handle : nullptr;
+}
+
+void setIntParam(OfxParamSetHandle paramSet, const char *name, int value) {
+  if (OfxParamHandle handle = getParamHandle(paramSet, name)) {
+    gParameterSuite->paramSetValue(handle, value);
+  }
+}
+
+void setDoubleParam(OfxParamSetHandle paramSet, const char *name, float value) {
+  if (OfxParamHandle handle = getParamHandle(paramSet, name)) {
+    gParameterSuite->paramSetValue(handle, static_cast<double>(value));
+  }
+}
+
+void setRGBParam(OfxParamSetHandle paramSet, const char *name, Vec3 value) {
+  if (OfxParamHandle handle = getParamHandle(paramSet, name)) {
+    gParameterSuite->paramSetValue(handle,
+                                   static_cast<double>(value.r),
+                                   static_cast<double>(value.g),
+                                   static_cast<double>(value.b));
+  }
+}
+
+void writePresetParams(OfxParamSetHandle paramSet, const RenderParams &params) {
+  setDoubleParam(paramSet, "mix", params.mix);
+  setIntParam(paramSet, "inputMode", params.inputMode);
+  setIntParam(paramSet, "squeezeMode", params.squeezeMode);
+  setDoubleParam(paramSet, "anamorphicTransfer", params.anamorphicTransfer);
+  setIntParam(paramSet, "lensIdentity", params.lensIdentity);
+  setDoubleParam(paramSet, "squeezeRatio", params.squeezeRatio);
+  setDoubleParam(paramSet, "axisWarp", params.axisWarp);
+  setDoubleParam(paramSet, "centerProtection", params.centerProtection);
+  setDoubleParam(paramSet, "edgeCompressionStart", params.edgeCompressionStart);
+  setDoubleParam(paramSet, "horizontalFovBoost", params.horizontalFovBoost);
+  setDoubleParam(paramSet, "virtualFocalLength", params.virtualFocalLength);
+  setDoubleParam(paramSet, "breathingScale", params.breathingScale);
+
+  setDoubleParam(paramSet, "bokehStretch", params.bokehStretch);
+  setDoubleParam(paramSet, "bokehRotation", params.bokehRotation);
+  setDoubleParam(paramSet, "bokehEdgeFalloff", params.bokehEdgeFalloff);
+  setDoubleParam(paramSet, "bokehStretchScale", params.bokehStretchScale);
+  setDoubleParam(paramSet, "bloomPixelScale", params.bloomPixelScale);
+  setDoubleParam(paramSet, "bloomThresholdScale", params.bloomThresholdScale);
+  setIntParam(paramSet, "bloomRings", params.bloomRings);
+  setIntParam(paramSet, "bloomSamplesPerRing", params.bloomSamplesPerRing);
+  setDoubleParam(paramSet, "bloomEdgeKeepScale", params.bloomEdgeKeepScale);
+  setDoubleParam(paramSet, "bloomVeilScale", params.bloomVeilScale);
+  setDoubleParam(paramSet, "bloomCreamScale", params.bloomCreamScale);
+
+  setDoubleParam(paramSet, "flareIntensity", params.flareIntensity);
+  setDoubleParam(paramSet, "flareLength", params.flareLength);
+  setRGBParam(paramSet, "flareColour", params.flareColour);
+  setDoubleParam(paramSet, "flareThreshold", params.flareThreshold);
+  setDoubleParam(paramSet, "flareAngle", params.flareAngle);
+  setDoubleParam(paramSet, "flareStepDensity", params.flareStepDensity);
+  setDoubleParam(paramSet, "flareSpanScale", params.flareSpanScale);
+  setDoubleParam(paramSet, "flareFalloff", params.flareFalloff);
+
+  setDoubleParam(paramSet, "veil", params.veil);
+  setDoubleParam(paramSet, "bloomRadius", params.bloomRadius);
+  setDoubleParam(paramSet, "highlightCream", params.highlightCream);
+  setDoubleParam(paramSet, "blackLiftProtection", params.blackLiftProtection);
+
+  setIntParam(paramSet, "ghostCount", params.ghostCount);
+  setDoubleParam(paramSet, "ghostSpread", params.ghostSpread);
+  setRGBParam(paramSet, "ghostTint", params.ghostTint);
+  setDoubleParam(paramSet, "ghostIntensity", params.ghostIntensity);
+  setIntParam(paramSet, "coatingStyle", params.coatingStyle);
+  setDoubleParam(paramSet, "coatingWarmResponse", params.coatingWarmResponse);
+  setDoubleParam(paramSet, "coatingCoolResponse", params.coatingCoolResponse);
+
+  setDoubleParam(paramSet, "edgeBlur", params.edgeBlur);
+  setDoubleParam(paramSet, "tangentialSmear", params.tangentialSmear);
+  setDoubleParam(paramSet, "radialFalloff", params.radialFalloff);
+  setDoubleParam(paramSet, "edgeBlurPixels", params.edgeBlurPixels);
+  setDoubleParam(paramSet, "fieldCurvaturePixels", params.fieldCurvaturePixels);
+  setDoubleParam(paramSet, "smearPixels", params.smearPixels);
+
+  setDoubleParam(paramSet, "barrel", params.barrel);
+  setDoubleParam(paramSet, "mustache", params.mustache);
+  setDoubleParam(paramSet, "verticalCompensation", params.verticalCompensation);
+  setDoubleParam(paramSet, "verticalCompensationScale", params.verticalCompensationScale);
+
+  setDoubleParam(paramSet, "closeFocusMumps", params.closeFocusMumps);
+  setDoubleParam(paramSet, "faceWidthCompensation", params.faceWidthCompensation);
+  setDoubleParam(paramSet, "focusDistance", params.focusDistance);
+  setDoubleParam(paramSet, "breathingAmount", params.breathingAmount);
+  setDoubleParam(paramSet, "mumpsScale", params.mumpsScale);
+
+  setDoubleParam(paramSet, "lateralCA", params.lateralCA);
+  setDoubleParam(paramSet, "longitudinalCA", params.longitudinalCA);
+  setIntParam(paramSet, "edgeOnlyCA", params.edgeOnlyCA > 0.5f ? 1 : 0);
+  setDoubleParam(paramSet, "lateralCAPixelScale", params.lateralCAPixelScale);
+
+  setDoubleParam(paramSet, "ovalVignette", params.ovalVignette);
+  setDoubleParam(paramSet, "vignetteAsymmetry", params.vignetteAsymmetry);
+  setDoubleParam(paramSet, "cornerBias", params.cornerBias);
+  setDoubleParam(paramSet, "ovalVignetteScale", params.ovalVignetteScale);
+  setDoubleParam(paramSet, "vignetteAsymmetryScale", params.vignetteAsymmetryScale);
+
+  setDoubleParam(paramSet, "horizontalSmear", params.horizontalSmear);
+  setDoubleParam(paramSet, "verticalSharpness", params.verticalSharpness);
+  setDoubleParam(paramSet, "fieldCurvature", params.fieldCurvature);
+
+  setDoubleParam(paramSet, "catEyeStrength", params.catEyeStrength);
+  setDoubleParam(paramSet, "bokehVignette", params.bokehVignette);
+  setDoubleParam(paramSet, "edgeCompression", params.edgeCompression);
+  setDoubleParam(paramSet, "catEyeDimScale", params.catEyeDimScale);
+  setDoubleParam(paramSet, "bokehVignetteDimScale", params.bokehVignetteDimScale);
+  setDoubleParam(paramSet, "edgeCompressionScale", params.edgeCompressionScale);
+  setDoubleParam(paramSet, "centerVeilScale", params.centerVeilScale);
+  setIntParam(paramSet, "enableHighlightEffects", params.enableHighlightEffects);
+  setIntParam(paramSet, "enableEdgeEffects", params.enableEdgeEffects);
+  setIntParam(paramSet, "enableAdditionalBackgroundBlur", params.enableAdditionalBackgroundBlur);
+
+  setIntParam(paramSet, "guidesEnabled", params.guidesEnabled);
+  setIntParam(paramSet, "outputAspect", params.outputAspect);
+  setDoubleParam(paramSet, "customOutputAspect", params.customOutputAspect);
+  setDoubleParam(paramSet, "safeArea", params.safeArea);
+  setIntParam(paramSet, "letterboxPreview", params.letterboxPreview);
+  setDoubleParam(paramSet, "letterboxOpacity", params.letterboxOpacity);
+  setDoubleParam(paramSet, "guideAspectStrength", params.guideAspectStrength);
+  setDoubleParam(paramSet, "guideSafeStrength", params.guideSafeStrength);
+  setIntParam(paramSet, "autoEdgeCrop", params.autoEdgeCrop);
+}
+
+OfxStatus applyPresetChange(OfxImageEffectHandle effect, OfxPropertySetHandle inArgs) {
+  if (!effect || !inArgs || !gEffectSuite || !gPropertySuite || !gParameterSuite) {
+    return kOfxStatReplyDefault;
+  }
+
+  char *changedName = nullptr;
+  if (gPropertySuite->propGetString(inArgs, kOfxPropName, 0, &changedName) != kOfxStatOK ||
+      !changedName || std::strcmp(changedName, "lookPreset") != 0) {
+    return kOfxStatOK;
+  }
+
+  OfxParamSetHandle paramSet = nullptr;
+  if (gEffectSuite->getParamSet(effect, &paramSet) != kOfxStatOK || !paramSet) {
+    return kOfxStatErrBadHandle;
+  }
+
+  OfxParamHandle presetHandle = getParamHandle(paramSet, "lookPreset");
+  if (!presetHandle) {
+    return kOfxStatErrBadHandle;
+  }
+
+  int preset = kLookPresetManual;
+  if (gParameterSuite->paramGetValue(presetHandle, &preset) != kOfxStatOK ||
+      preset == kLookPresetManual) {
+    return kOfxStatOK;
+  }
+
+  RenderParams params;
+  params.lookPreset = preset;
+  params = normalizeRenderParams(params);
+
+  if (gParameterSuite->paramEditBegin) {
+    gParameterSuite->paramEditBegin(paramSet, "Apply Rimell look preset");
+  }
+  writePresetParams(paramSet, params);
+  gParameterSuite->paramSetValue(presetHandle, static_cast<int>(kLookPresetManual));
+  if (gParameterSuite->paramEditEnd) {
+    gParameterSuite->paramEditEnd(paramSet);
+  }
+
+  return kOfxStatOK;
+}
 
 OfxStatus onLoad() {
   if (!gHost) {
@@ -98,6 +275,12 @@ OfxStatus pluginMain(const char *action, const void *handle, OfxPropertySetHandl
       stage = "lifecycle_noop";
       actionTimer.setResult(ofxStatusToString(kOfxStatOK));
       return kOfxStatOK;
+    }
+    if (std::strcmp(action, kOfxActionInstanceChanged) == 0) {
+      stage = "instance_changed";
+      const OfxStatus status = applyPresetChange(effect, inArgs);
+      actionTimer.setResult(ofxStatusToString(status));
+      return status;
     }
     if (std::strcmp(action, kOfxImageEffectActionIsIdentity) == 0) {
       stage = "is_identity";

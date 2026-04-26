@@ -100,13 +100,13 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addChoiceParam(paramSet, "renderQuality", "Render Quality", 1, {"Draft", "Preview", "Final", "Ultra"},
               "Caps expensive flare, bloom, blur, ghost, and chromatic sampling for playback or export.",
               "performanceGroup");
-  addChoiceParam(paramSet, "lookPreset", "Look Preset", 1,
+  addChoiceParam(paramSet, "lookPreset", "Look Preset", 0,
                  {"Manual", "Clean Scope 1.33x", "Modern 1.8x Controlled", "Classic 2x Soft Edge",
                   "Vintage 2x Blue Streak", "Warm Coated Scope", "Night Practical Flares",
                   "Low Distortion CinemaScope", "Soft Background Oval Bokeh",
                   "Waterfall Bokeh Experimental", "Heavy Mumps Vintage", "Edge Smear Experimental",
                   "Geometry Only", "Flare Only Controlled", "Real Anamorphic Utility", "Debug / Neutral"},
-              "Creative starting points. Clean Scope 1.33x is the default; Manual leaves individual controls unchanged.",
+              "Creative starting points. Choosing one writes its values into the controls, then returns to Manual.",
               "coreGroup");
   addIntParam(paramSet, "schemaVersion", "Schema Version", kCurrentParameterSchemaVersion,
             kCurrentParameterSchemaVersion, kCurrentParameterSchemaVersion, nullptr, "debugGroup");
