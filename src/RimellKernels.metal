@@ -11,6 +11,8 @@ PixelChannel floatToChannel(float v) {
   return v;
 }
 
+constant int kUniformVersion = 1;
+
 struct P {
   float mix;
   int uniformVersion;
@@ -136,6 +138,8 @@ struct I {
 struct CopyUniforms {
   int sourceX1;
   int sourceY1;
+  int sourceX2;
+  int sourceY2;
   int sourceRowFloats;
   int outputX1;
   int outputY1;
@@ -159,6 +163,12 @@ constant float kPi = 3.14159265358979323846f;
 
 float clamp01(float v) { return clamp(v, 0.0f, 1.0f); }
 float finiteOr(float v, float fallback) { return isfinite(v) ? v : fallback; }
+float safeFloatOut(float v, float fallback) {
+  if (!isfinite(v)) {
+    return fallback;
+  }
+  return clamp(v, -65504.0f, 65504.0f);
+}
 float2 finiteOr2(float2 v, float2 fallback) {
   return float2(finiteOr(v.x, fallback.x), finiteOr(v.y, fallback.y));
 }
@@ -173,6 +183,13 @@ float smoothstepf(float e0, float e1, float x) {
   return t * t * (3.0f - 2.0f * t);
 }
 float safeSqueezeDelta(constant P &p) { return p.safeSqueezeDelta; }
+
+void writePixel(device PixelChannel *dst, int index, float4 value, float4 fallback) {
+  dst[index + 0] = safeFloatOut(value.x, fallback.x);
+  dst[index + 1] = safeFloatOut(value.y, fallback.y);
+  dst[index + 2] = safeFloatOut(value.z, fallback.z);
+  dst[index + 3] = safeFloatOut(value.w, fallback.w);
+}
 
 float presetAxisWarp(int v) { return v == 1 ? 0.22f : (v == 2 ? 0.62f : (v == 3 ? 0.46f : 0.0f)); }
 float lensIdentityAxisWarp(constant P &p) { return clamp01(p.axisWarp + presetAxisWarp(p.lensIdentity)); }
@@ -482,7 +499,7 @@ float4 lensAdditives(const device PixelChannel *src, constant I &info, constant 
   if (bloomEnabled && bloomPixels > 0.5f) {
     float cosR = p.bokehCos;
     float sinR = p.bokehSin;
-    float stretch = (1.0f + p.bokehStretch * p.bokehStretchScale) * lensIdentityBloomScale(p);
+    float stretch = max(0.05f, (1.0f + p.bokehStretch * p.bokehStretchScale) * lensIdentityBloomScale(p));
     int rings = cappedBloomRings(p);
     int samplesPerRing = cappedBloomSamplesPerRing(p);
     float total = 0.0f;
@@ -504,7 +521,7 @@ float4 lensAdditives(const device PixelChannel *src, constant I &info, constant 
       bloom /= total;
       LensMap lm = buildLensMap(x, y, info, p);
       float edge = max(lm.edgeMask, smoothstepf(0.35f, 1.1f, lm.radius));
-      float bokehEdgeKeep = 1.0f - edge * p.bokehEdgeFalloff * p.bloomEdgeKeepScale;
+      float bokehEdgeKeep = clamp01(1.0f - edge * p.bokehEdgeFalloff * p.bloomEdgeKeepScale);
       float protect = lerpf(1.0f, clamp01(luminance(base) * 2.0f), p.blackLiftProtection);
       float amount = (p.veil * p.bloomVeilScale + p.highlightCream * p.bloomCreamScale) * protect * bokehEdgeKeep;
       add.xyz += bloom.xyz * amount;
@@ -551,9 +568,11 @@ float4 applyVignetteAndGuides(float4 color, float x, float y, constant I &info, 
   float ovalY = ny * (1.0f + p.ovalVignette * p.ovalVignetteScale);
   float asym = nx * p.vignetteAsymmetry * p.vignetteAsymmetryScale + ny * p.cornerBias * p.vignetteAsymmetryScale;
   float vignette = 1.0f - p.ovalVignette * smoothstepf(0.35f, 1.2f, sqrt(nx * nx + ovalY * ovalY) + asym);
-  color.xyz *= vignette;
+  vignette = max(0.0f, vignette);
   float edge = smoothstepf(0.55f, 1.08f, sqrt(nx * nx + ny * ny));
-  color.xyz *= 1.0f - p.catEyeStrength * edge * p.catEyeDimScale - p.bokehVignette * edge * p.bokehVignetteDimScale;
+  float edgeDim = 1.0f - p.catEyeStrength * edge * p.catEyeDimScale - p.bokehVignette * edge * p.bokehVignetteDimScale;
+  edgeDim = max(0.0f, edgeDim);
+  color.xyz *= vignette * edgeDim;
   if (p.guidesEnabled != 0 || p.letterboxPreview != 0) {
     float target = aspectValue(p.outputAspect, p.customOutputAspect);
     float current = float(info.width) / max(1.0f, float(info.height));
@@ -605,11 +624,8 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
   }
   int outIndex = (y - info.outputY1) * info.outputRowFloats + (x - info.outputX1) * 4;
 
-  if (p.uniformVersion != 1) {
-    dst[outIndex] = 1.0f;
-    dst[outIndex + 1] = 0.0f;
-    dst[outIndex + 2] = 1.0f;
-    dst[outIndex + 3] = 1.0f;
+  if (p.uniformVersion != kUniformVersion) {
+    writePixel(dst, outIndex, float4(1.0f, 0.0f, 1.0f, 1.0f), float4(1.0f, 0.0f, 1.0f, 1.0f));
     return;
   }
 
@@ -626,18 +642,12 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
       float e = edgeMaskAt(info, p, float(x), float(y));
       debugColor = float4(e, e, e, 1.0f);
     }
-    dst[outIndex] = floatToChannel(debugColor.x);
-    dst[outIndex + 1] = floatToChannel(debugColor.y);
-    dst[outIndex + 2] = floatToChannel(debugColor.z);
-    dst[outIndex + 3] = floatToChannel(debugColor.w);
+    writePixel(dst, outIndex, debugColor, original);
     return;
   }
 
   if (p.mix <= 0.0001f) {
-    dst[outIndex] = floatToChannel(original.x);
-    dst[outIndex + 1] = floatToChannel(original.y);
-    dst[outIndex + 2] = floatToChannel(original.z);
-    dst[outIndex + 3] = floatToChannel(original.w);
+    writePixel(dst, outIndex, original, original);
     return;
   }
 
@@ -654,10 +664,7 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
                     finiteOr(outPixel.y, original.y),
                     finiteOr(outPixel.z, original.z),
                     original.w);
-  dst[outIndex] = floatToChannel(outPixel.x);
-  dst[outIndex + 1] = floatToChannel(outPixel.y);
-  dst[outIndex + 2] = floatToChannel(outPixel.z);
-  dst[outIndex + 3] = floatToChannel(outPixel.w);
+  writePixel(dst, outIndex, outPixel, original);
 }
 
 kernel void rimell_copy_float(device const float *source [[buffer(0)]],
@@ -671,8 +678,8 @@ kernel void rimell_copy_float(device const float *source [[buffer(0)]],
     return;
   }
 
-  int sx = x - u.sourceX1;
-  int sy = y - u.sourceY1;
+  int sx = clamp(x, u.sourceX1, u.sourceX2 - 1) - u.sourceX1;
+  int sy = clamp(y, u.sourceY1, u.sourceY2 - 1) - u.sourceY1;
   int ox = x - u.outputX1;
   int oy = y - u.outputY1;
 

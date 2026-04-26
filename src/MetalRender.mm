@@ -145,6 +145,8 @@ struct MetalImageInfo {
 struct CopyUniforms {
   int sourceX1;
   int sourceY1;
+  int sourceX2;
+  int sourceY2;
   int sourceRowFloats;
   int outputX1;
   int outputY1;
@@ -748,6 +750,8 @@ OfxStatus renderMetalCopyFloat(void *commandQueue, const Image &source, const Im
     CopyUniforms uniforms{
         source.bounds.x1,
         source.bounds.y1,
+        source.bounds.x2,
+        source.bounds.y2,
         sourceRowFloats,
         output.bounds.x1,
         output.bounds.y1,
