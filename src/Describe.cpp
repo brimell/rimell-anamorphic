@@ -55,6 +55,13 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addPageParam(paramSet, "edgePage", "Edge / CA");
   addPageParam(paramSet, "framingPage", "Framing");
 
+  // Visual spacers for hosts that flatten OFX section metadata.
+  addStringParam(paramSet, "coreHeader", "=== Core ===");
+  addStringParam(paramSet, "geometryHeader", "=== Geometry ===");
+  addStringParam(paramSet, "highlightHeader", "=== Highlights / Flares ===");
+  addStringParam(paramSet, "edgeHeader", "=== Edge / CA ===");
+  addStringParam(paramSet, "framingHeader", "=== Framing ===");
+
   // Core controls.
   addDoubleParam(paramSet, "mix", "Mix", 1.0, 0.0, 1.0, 0.0, 1.0);
   addChoiceParam(paramSet, "debugView", "Debug View", 0, {"Off", "Source", "Highlight Matte", "Edge Mask"});
@@ -193,6 +200,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   }
 
   const char *core[] = {"mix", "debugView", "renderQuality", "lookPreset"};
+  addPageChild(paramSet, "corePage", "coreHeader");
   for (const char *name : core) {
     addPageChild(paramSet, "corePage", name);
   }
@@ -204,6 +212,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                             "mustache",        "verticalCompensation", "verticalCompensationScale",
                             "edgeCompression", "edgeCompressionScale", "closeFocusMumps",
                             "faceWidthCompensation", "focusDistance", "breathingAmount", "mumpsScale"};
+  addPageChild(paramSet, "geometryPage", "geometryHeader");
   for (const char *name : geometry) {
     addPageChild(paramSet, "geometryPage", name);
   }
@@ -218,6 +227,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                               "highlightCream",      "blackLiftProtection", "ghostCount",
                               "ghostSpread",         "ghostTint",           "ghostIntensity",
                               "coatingStyle",        "coatingWarmResponse", "coatingCoolResponse"};
+  addPageChild(paramSet, "highlightPage", "highlightHeader");
   for (const char *name : highlights) {
     addPageChild(paramSet, "highlightPage", name);
   }
@@ -231,6 +241,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                         "catEyeStrength",     "bokehVignette",        "edgeCompression",
                         "catEyeDimScale",     "bokehVignetteDimScale", "edgeCompressionScale",
                         "centerVeilScale"};
+  addPageChild(paramSet, "edgePage", "edgeHeader");
   for (const char *name : edge) {
     addPageChild(paramSet, "edgePage", name);
   }
@@ -238,6 +249,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   const char *framing[] = {"guidesEnabled",       "outputAspect",       "customOutputAspect",
                            "safeArea",            "letterboxPreview",   "letterboxOpacity",
                            "guideAspectStrength", "guideSafeStrength",  "autoEdgeCrop"};
+  addPageChild(paramSet, "framingPage", "framingHeader");
   for (const char *name : framing) {
     addPageChild(paramSet, "framingPage", name);
   }

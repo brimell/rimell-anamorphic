@@ -15,6 +15,8 @@ void addIntParam(OfxParamSetHandle paramSet, const char *name, const char *label
                  int minValue, int maxValue, const char *hint = nullptr);
 void addBooleanParam(OfxParamSetHandle paramSet, const char *name, const char *label, int defaultValue,
                      const char *hint = nullptr);
+void addStringParam(OfxParamSetHandle paramSet, const char *name, const char *label,
+                    const char *defaultValue = "", const char *hint = nullptr);
 void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *label, int open = 1);
 void addPageParam(OfxParamSetHandle paramSet, const char *name, const char *label);
 void addChoiceParam(OfxParamSetHandle paramSet, const char *name, const char *label, int defaultValue,

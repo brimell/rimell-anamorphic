@@ -69,6 +69,25 @@ void addBooleanParam(OfxParamSetHandle paramSet, const char *name, const char *l
   }
 }
 
+void addStringParam(OfxParamSetHandle paramSet, const char *name, const char *label, const char *defaultValue,
+                    const char *hint) {
+  if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {
+    return;
+  }
+
+  OfxPropertySetHandle props = nullptr;
+  if (gParameterSuite->paramDefine(paramSet, kOfxParamTypeString, name, &props) != kOfxStatOK || !props) {
+    return;
+  }
+
+  gPropertySuite->propSetString(props, kOfxPropLabel, 0, label);
+  gPropertySuite->propSetString(props, kOfxParamPropDefault, 0, defaultValue ? defaultValue : "");
+  gPropertySuite->propSetInt(props, kOfxParamPropEnabled, 0, 0);
+  if (hint) {
+    gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);
+  }
+}
+
 void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *label, int open) {
   if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {
     return;
