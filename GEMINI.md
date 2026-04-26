@@ -1,0 +1,2 @@
+after every change you make please commit to github but don't push
+commit after steps in each change. lots of small commits are better than one big commit. also make sure to write good commit messages that explain the change you made. this will help you and others understand the history of the project and why certain changes were made.
