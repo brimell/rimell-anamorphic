@@ -489,27 +489,13 @@ float highlightAt(const device float* src, constant I& info, constant P& p, floa
 
 float4 lensAdditives(const device float* src, constant I& info, constant P& p, float x, float y, float4 base) {
   float4 add = 0.0f;
-  float flareAngle = p.flareAngle * kPi / 180.0f;
-  float dirX = cos(flareAngle), dirY = sin(flareAngle);
-  float sampleScale = qualityScale(p);
-  int flareSteps = max(1, int(round((2.0f + p.flareLength * p.flareStepDensity) * sampleScale)));
-  float flareSpan = p.flareLength * float(info.width) * p.flareSpanScale * lensIdentityFlareScale(p);
-  if (p.flareIntensity > 0.001f && flareSpan > 1.0f) {
-    for (int i = -flareSteps; i <= flareSteps; ++i) {
-      if (i == 0) continue;
-      float t = float(i) / float(flareSteps);
-      float h = highlightAt(src, info, p, x + dirX * t * flareSpan, y + dirY * t * flareSpan, p.flareThreshold);
-      float w = exp(-abs(t) * p.flareFalloff) * h * p.flareIntensity;
-      add.x += p.flareColourR * w; add.y += p.flareColourG * w; add.z += p.flareColourB * w;
-    }
-  }
-  float bloomPixels = p.bloomRadius * p.bloomPixelScale;
+  float bloomPixels = min(p.bloomRadius * p.bloomPixelScale, 48.0f);
   if ((p.veil > 0.001f || p.highlightCream > 0.001f) && bloomPixels > 0.5f) {
     float rotation = p.bokehRotation * kPi / 180.0f;
     float cosR = cos(rotation), sinR = sin(rotation);
     float stretch = (1.0f + p.bokehStretch * p.bokehStretchScale) * lensIdentityBloomScale(p);
-    int rings = max(1, int(round(float(p.bloomRings) * sampleScale)));
-    int samplesPerRing = max(3, int(round(float(p.bloomSamplesPerRing) * sampleScale)));
+    const int rings = 2;
+    const int samplesPerRing = 8;
     float total = 0.0f; float4 bloom = 0.0f;
     for (int ring = 1; ring <= rings; ++ring) {
       float ringRadius = bloomPixels * float(ring) / float(rings);
@@ -533,20 +519,6 @@ float4 lensAdditives(const device float* src, constant I& info, constant P& p, f
       add.xyz += bloom.xyz * amount;
     }
   }
-  if (p.ghostCount > 0 && p.ghostSpread > 0.001f) {
-    float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
-    float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
-    float tintShift = p.coatingStyle == 0 ? p.coatingWarmResponse : (p.coatingStyle == 2 ? p.coatingCoolResponse : 1.0f);
-    int ghostCount = p.renderQuality == 0 ? min(p.ghostCount, 3) : (p.renderQuality == 2 ? p.ghostCount : min(p.ghostCount, 6));
-    for (int i = 1; i <= ghostCount; ++i) {
-      float scale = 1.0f + p.ghostSpread * float(i);
-      float4 g = warpedSourceSample(src, info, p, cx - (x - cx) * scale * lensIdentityGhostScaleX(p), cy - (y - cy) * scale * lensIdentityGhostScaleY(p), 0.0f);
-      float w = smoothstepf(p.flareThreshold, 1.0f, luminance(g)) * (p.ghostIntensity / float(i)) * tintShift;
-      add.x += g.x * p.ghostTintR * w; add.y += g.y * p.ghostTintG * w; add.z += g.z * p.ghostTintB * w;
-    }
-  }
-  float centerGlow = smoothstepf(p.flareThreshold * 0.9f, 1.0f, luminance(base));
-  add.xyz += p.veil * centerGlow * p.centerVeilScale;
   return add;
 }
 
