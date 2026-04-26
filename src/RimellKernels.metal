@@ -217,18 +217,42 @@ float4 sampleNearest(const device PixelChannel *src, constant I &info, float x, 
 }
 
 float4 sampleBilinear(const device PixelChannel *src, constant I &info, float x, float y) {
-  if (!isfinite(x) || !isfinite(y)) {
-    return loadPixel(src, info, info.sourceX1, info.sourceY1);
-  }
   int x0 = int(floor(x));
   int y0 = int(floor(y));
   float tx = x - float(x0);
   float ty = y - float(y0);
-  float4 p00 = loadPixel(src, info, x0, y0);
-  float4 p10 = loadPixel(src, info, x0 + 1, y0);
-  float4 p01 = loadPixel(src, info, x0, y0 + 1);
-  float4 p11 = loadPixel(src, info, x0 + 1, y0 + 1);
+
+  int cx0 = clamp(x0, info.sourceX1, info.sourceX2 - 1) - info.sourceX1;
+  int cx1 = clamp(x0 + 1, info.sourceX1, info.sourceX2 - 1) - info.sourceX1;
+  int cy0 = clamp(y0, info.sourceY1, info.sourceY2 - 1) - info.sourceY1;
+  int cy1 = clamp(y0 + 1, info.sourceY1, info.sourceY2 - 1) - info.sourceY1;
+
+  int row0 = cy0 * info.sourceRowFloats;
+  int row1 = cy1 * info.sourceRowFloats;
+
+  int idx00 = row0 + cx0 * 4;
+  int idx10 = row0 + cx1 * 4;
+  int idx01 = row1 + cx0 * 4;
+  int idx11 = row1 + cx1 * 4;
+
+  float4 p00 = float4(channelToFloat(src[idx00]), channelToFloat(src[idx00+1]), channelToFloat(src[idx00+2]), channelToFloat(src[idx00+3]));
+  float4 p10 = float4(channelToFloat(src[idx10]), channelToFloat(src[idx10+1]), channelToFloat(src[idx10+2]), channelToFloat(src[idx10+3]));
+  float4 p01 = float4(channelToFloat(src[idx01]), channelToFloat(src[idx01+1]), channelToFloat(src[idx01+2]), channelToFloat(src[idx01+3]));
+  float4 p11 = float4(channelToFloat(src[idx11]), channelToFloat(src[idx11+1]), channelToFloat(src[idx11+2]), channelToFloat(src[idx11+3]));
+
   return mix(mix(p00, p10, tx), mix(p01, p11, tx), ty);
+}
+
+struct LocalMapping {
+  float2 spCenter;
+  float2 spDx;
+  float2 spDy;
+  float2 caDirection;
+};
+
+float4 fastSourceSampleCA(const device PixelChannel *src, constant I &info, constant P &p, LocalMapping map, float dx, float dy, float caPixels) {
+  float2 sp = map.spCenter + map.spDx * dx + map.spDy * dy + map.caDirection * caPixels;
+  return sampleBilinear(src, info, sp.x, sp.y);
 }
 
 LensMap buildLensMap(float dstX, float dstY, constant I &info, constant P &p) {
@@ -430,29 +454,13 @@ float cappedCAPixels(constant P &p) {
   return min(p.lateralCA * p.lateralCAPixelScale, cap);
 }
 
-float4 channelDefocusSample(const device PixelChannel *src, constant I &info, constant P &p, float x, float y,
-                            float radiusPixels) {
-  if (radiusPixels <= 0.05f) {
-    return warpedSourceSample(src, info, p, x, y, 0.0f);
-  }
-  float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
-  float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
-  float2 d = float2(x - cx, y - cy);
-  float len = length(d);
-  d = len > 0.0001f ? d / len : float2(1.0f, 0.0f);
-  float4 center = warpedSourceSample(src, info, p, x, y, 0.0f);
-  float4 outward = warpedSourceSample(src, info, p, x + d.x * radiusPixels, y + d.y * radiusPixels, 0.0f);
-  float4 inward = warpedSourceSample(src, info, p, x - d.x * radiusPixels, y - d.y * radiusPixels, 0.0f);
-  return float4(center.xyz * 0.5f + (outward.xyz + inward.xyz) * 0.25f, center.w);
-}
-
-float4 opticalBaseSample(const device PixelChannel *src, constant I &info, constant P &p, float x, float y) {
+float4 opticalBaseSample(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, LocalMapping map) {
   float caPixels = p.lateralCA * p.lateralCAPixelScale;
-  float4 base = warpedSourceSample(src, info, p, x, y, 0.0f);
+  float4 base = fastSourceSampleCA(src, info, p, map, 0.0f, 0.0f, 0.0f);
   if (caPixels > 0.01f) {
     float cappedCA = cappedCAPixels(p);
-    base.x = warpedSourceSample(src, info, p, x, y, cappedCA).x;
-    base.z = warpedSourceSample(src, info, p, x, y, -cappedCA).z;
+    base.x = fastSourceSampleCA(src, info, p, map, 0.0f, 0.0f, cappedCA).x;
+    base.z = fastSourceSampleCA(src, info, p, map, 0.0f, 0.0f, -cappedCA).z;
   }
   if (p.longitudinalCA > 0.001f) {
     float cx = float(info.sourceX1 + info.sourceX2 - 1) * 0.5f;
@@ -463,13 +471,30 @@ float4 opticalBaseSample(const device PixelChannel *src, constant I &info, const
     float focusBias = 0.35f + abs(p.focusDistance - 0.5f) * 1.3f;
     float radiusPixels = p.longitudinalCA * focusBias * edge * 4.0f;
     float amount = clamp01(p.longitudinalCA * (0.35f + edge * 0.65f));
-    base.x = lerpf(base.x, channelDefocusSample(src, info, p, x, y, radiusPixels).x, amount);
-    base.z = lerpf(base.z, channelDefocusSample(src, info, p, x, y, radiusPixels * 0.65f).z, amount);
+
+    float2 d = float2(x - cx, y - cy);
+    float len = length(d);
+    d = len > 0.0001f ? d / len : float2(1.0f, 0.0f);
+
+    if (radiusPixels > 0.05f) {
+      float cappedCA = caPixels > 0.01f ? cappedCAPixels(p) : 0.0f;
+      float4 center = fastSourceSampleCA(src, info, p, map, 0.0f, 0.0f, 0.0f);
+      float4 outward = fastSourceSampleCA(src, info, p, map, d.x * radiusPixels, d.y * radiusPixels, cappedCA);
+      float4 inward = fastSourceSampleCA(src, info, p, map, -d.x * radiusPixels, -d.y * radiusPixels, cappedCA);
+      float defX = center.x * 0.5f + (outward.x + inward.x) * 0.25f;
+
+      float4 outwardB = fastSourceSampleCA(src, info, p, map, d.x * radiusPixels * 0.65f, d.y * radiusPixels * 0.65f, -cappedCA);
+      float4 inwardB = fastSourceSampleCA(src, info, p, map, -d.x * radiusPixels * 0.65f, -d.y * radiusPixels * 0.65f, -cappedCA);
+      float defZ = center.z * 0.5f + (outwardB.z + inwardB.z) * 0.25f;
+
+      base.x = lerpf(base.x, defX, amount);
+      base.z = lerpf(base.z, defZ, amount);
+    }
   }
   return base;
 }
 
-float4 edgeCharacter(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base) {
+float4 edgeCharacter(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base, LocalMapping map, LensMap lm) {
   if (p.edgeBlur <= 0.001f && p.fieldCurvature <= 0.001f && p.tangentialSmear <= 0.001f &&
       p.horizontalSmear <= 0.001f && p.verticalSharpness <= 0.001f) {
     return base;
@@ -479,7 +504,6 @@ float4 edgeCharacter(const device PixelChannel *src, constant I &info, constant 
   float cy = float(info.sourceY1 + info.sourceY2 - 1) * 0.5f;
   float nx = (x - cx) / max(1.0f, float(info.width) * 0.5f);
   float ny = (y - cy) / max(1.0f, float(info.height) * 0.5f);
-  LensMap lm = buildLensMap(x, y, info, p);
   float radius = max(lm.radius, sqrt(nx * nx + ny * ny));
   float edge = max(lm.edgeMask, smoothstepf(max(0.0f, 1.0f - p.radialFalloff), 1.15f, radius));
   float4 result = base;
@@ -491,7 +515,7 @@ float4 edgeCharacter(const device PixelChannel *src, constant I &info, constant 
     for (int i = -blurSamples; i <= blurSamples; ++i) {
       float t = float(i) / float(blurSamples);
       float w = 1.0f - abs(t) * 0.55f;
-      blur += warpedSourceSample(src, info, p, x + t * blurRadius, y + t * blurRadius * 0.25f, 0.0f) * w;
+      blur += fastSourceSampleCA(src, info, p, map, t * blurRadius, t * blurRadius * 0.25f, 0.0f) * w;
       weight += w;
     }
     result = lerp4(result, blur / weight, clamp01(edge * (p.edgeBlur + p.fieldCurvature)));
@@ -504,14 +528,14 @@ float4 edgeCharacter(const device PixelChannel *src, constant I &info, constant 
     for (int i = -smearSamples; i <= smearSamples; ++i) {
       float t = float(i) / float(smearSamples);
       float w = 1.0f - abs(t) * 0.7f;
-      smear += warpedSourceSample(src, info, p, x + t * smearRadius, y, 0.0f) * w;
+      smear += fastSourceSampleCA(src, info, p, map, t * smearRadius, 0.0f, 0.0f) * w;
       weight += w;
     }
     result = lerp4(result, smear / weight, clamp01(edge * (p.tangentialSmear + p.horizontalSmear)));
   }
   if (p.verticalSharpness > 0.001f) {
-    float4 up = warpedSourceSample(src, info, p, x, y - 1.5f, 0.0f);
-    float4 down = warpedSourceSample(src, info, p, x, y + 1.5f, 0.0f);
+    float4 up = fastSourceSampleCA(src, info, p, map, 0.0f, -1.5f, 0.0f);
+    float4 down = fastSourceSampleCA(src, info, p, map, 0.0f, 1.5f, 0.0f);
     float sharpen = p.verticalSharpness * (1.0f - edge * 0.5f);
     result.y = clamp01(result.y + (result.y - (up.y + down.y) * 0.5f) * sharpen);
     result.x = clamp01(result.x + (result.x - (up.x + down.x) * 0.5f) * sharpen * 0.5f);
@@ -534,7 +558,7 @@ float highlightAt(const device PixelChannel *src, constant I &info, constant P &
   return smoothstepf(threshold, 1.0f, luminance(warpedSourceSample(src, info, p, x, y, 0.0f)));
 }
 
-float4 lensAdditives(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base) {
+float4 lensAdditives(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base, LocalMapping map, LensMap lm) {
   float4 add = 0.0f;
   bool flareEnabled = p.flareIntensity > 0.001f && p.flareLength > 0.001f;
   bool bloomEnabled = (p.veil > 0.001f || p.highlightCream > 0.001f) && p.bloomRadius > 0.001f &&
@@ -578,7 +602,7 @@ float4 lensAdditives(const device PixelChannel *src, constant I &info, constant 
         float a = 2.0f * kPi * float(i) / float(samplesPerRing);
         float ox = cos(a) * ringRadius / stretch;
         float oy = sin(a) * ringRadius * stretch;
-        float4 s = warpedSourceSample(src, info, p, x + ox * cosR - oy * sinR, y + ox * sinR + oy * cosR, 0.0f);
+        float4 s = fastSourceSampleCA(src, info, p, map, ox * cosR - oy * sinR, ox * sinR + oy * cosR, 0.0f);
         float h = smoothstepf(p.flareThreshold * p.bloomThresholdScale, 1.0f, luminance(s));
         float w = h / float(ring);
         bloom += s * w;
@@ -587,7 +611,6 @@ float4 lensAdditives(const device PixelChannel *src, constant I &info, constant 
     }
     if (total > 0.0f) {
       bloom /= total;
-      LensMap lm = buildLensMap(x, y, info, p);
       float edge = max(lm.edgeMask, smoothstepf(0.35f, 1.1f, lm.radius));
       float bokehEdgeKeep = clamp01(1.0f - edge * p.bokehEdgeFalloff * p.bloomEdgeKeepScale);
       float protect = lerpf(1.0f, clamp01(luminance(base) * 2.0f), p.blackLiftProtection);
@@ -719,9 +742,26 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
     return;
   }
 
-  float4 color = opticalBaseSample(src, info, p, float(x), float(y));
-  color = edgeCharacter(src, info, p, float(x), float(y), color);
-  float4 add = lensAdditives(src, info, p, float(x), float(y), color);
+  float2 centerCropped = applyEdgeCrop(float(x), float(y), info, p);
+  LensMap centerLm = buildLensMap(centerCropped.x, centerCropped.y, info, p);
+  float2 spCenter = lensMapToSourcePixel(centerLm, info);
+
+  float caMask = p.edgeOnlyCA > 0.5f ? smoothstepf(0.2f, 1.0f, centerLm.radius) : 1.0f;
+  float2 caDirection = centerLm.caDirection * caMask;
+
+  float2 dxCropped = applyEdgeCrop(float(x) + 1.0f, float(y), info, p);
+  LensMap dxLm = buildLensMap(dxCropped.x, dxCropped.y, info, p);
+  float2 spDx = lensMapToSourcePixel(dxLm, info) - spCenter;
+
+  float2 dyCropped = applyEdgeCrop(float(x), float(y) + 1.0f, info, p);
+  LensMap dyLm = buildLensMap(dyCropped.x, dyCropped.y, info, p);
+  float2 spDy = lensMapToSourcePixel(dyLm, info) - spCenter;
+
+  LocalMapping map = { spCenter, spDx, spDy, caDirection };
+
+  float4 color = opticalBaseSample(src, info, p, float(x), float(y), map);
+  color = edgeCharacter(src, info, p, float(x), float(y), color, map, centerLm);
+  float4 add = lensAdditives(src, info, p, float(x), float(y), color, map, centerLm);
   color.xyz += add.xyz;
   color = applyVignetteAndGuides(color, float(x - info.sourceX1), float(y - info.sourceY1), info, p);
   color.w = original.w;
