@@ -291,7 +291,13 @@ Pixel opticalBaseSample(const Image &source, float x, float y, int width, int he
     const float nx = (x - cx) / std::max(1.0f, width * 0.5f);
     const float ny = (y - cy) / std::max(1.0f, height * 0.5f);
     const float edge = smoothstep(0.15f, 1.05f, std::sqrt(nx * nx + ny * ny));
-    const float focusBias = 0.35f + std::abs(params.focusDistance - 0.5f) * 1.3f;
+    
+    float depthValue = 0.5f;
+    if (params.hasDepth) {
+      depthValue = sampleBilinear<T>(params.depth, x, y).r;
+    }
+    
+    const float focusBias = 0.35f + std::abs(params.focusDistance - depthValue) * 1.3f;
     const float radiusPixels = params.longitudinalCA * focusBias * edge * 4.0f;
     const Pixel redDefocus = channelDefocusSample<T>(source, x, y, width, height, params, radiusPixels);
     const Pixel blueDefocus = channelDefocusSample<T>(source, x, y, width, height, params, radiusPixels * 0.65f);
@@ -323,8 +329,14 @@ Pixel edgeCharacter(const Image &source, float x, float y, int width, int height
 
   Pixel result = base;
 
+  float depthValue = 0.5f;
+  if (params.hasDepth) {
+    depthValue = sampleBilinear<T>(params.depth, x, y).r;
+  }
+  const float focusBias = 0.35f + std::abs(params.focusDistance - depthValue) * 1.3f;
+
   const float blurRadius =
-      params.edgeBlur * edge * params.edgeBlurPixels + params.fieldCurvature * edge * params.fieldCurvaturePixels;
+      params.edgeBlur * edge * focusBias * params.edgeBlurPixels + params.fieldCurvature * edge * params.fieldCurvaturePixels;
   if (blurRadius > 0.05f) {
     Pixel blur{};
     float weight = 0.0f;
@@ -407,6 +419,12 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
     return add;
   }
 
+  float depthValue = 0.5f;
+  if (params.hasDepth) {
+    depthValue = sampleBilinear<T>(params.depth, x, y).r;
+  }
+  const float focusBias = 0.35f + std::abs(params.focusDistance - depthValue) * 1.3f;
+
   const int flareSteps = cappedFlareSteps(params);
   const float flareSpan = params.flareLength * static_cast<float>(width) * params.flareSpanScale *
                           lensIdentityFlareScale(params);
@@ -429,7 +447,7 @@ Pixel lensAdditives(const Image &source, float x, float y, int width, int height
     }
   }
 
-  const float bloomPixels = params.bloomRadius * params.bloomPixelScale;
+  const float bloomPixels = params.bloomRadius * focusBias * params.bloomPixelScale;
   if (bloomEnabled && bloomPixels > 0.5f) {
     const float rotation = params.bokehRotation * kPi / 180.0f;
     const float cosR = std::cos(rotation);
@@ -900,6 +918,7 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
 
   OfxImageClipHandle sourceClip = nullptr;
   OfxImageClipHandle outputClip = nullptr;
+  OfxImageClipHandle depthClip = nullptr;
   stage = "get_clips";
   if (gEffectSuite->clipGetHandle(instance, kOfxImageEffectSimpleSourceClipName, &sourceClip, nullptr) !=
           kOfxStatOK ||
@@ -909,6 +928,8 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
     renderTimer.setResult("failed_get_clips");
     return kOfxStatErrBadHandle;
   }
+  gEffectSuite->clipGetHandle(instance, "Depth", &depthClip, nullptr);
+
   logPrintf(LogLevel::Debug,
             "render",
             "clip handles source=%p output=%p",
@@ -917,8 +938,10 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
 
   OfxPropertySetHandle sourceImageHandle = nullptr;
   OfxPropertySetHandle outputImageHandle = nullptr;
+  OfxPropertySetHandle depthImageHandle = nullptr;
   Image source{};
   Image output{};
+  Image depth{};
   OfxStatus status = kOfxStatOK;
   const bool hostMetal = hostMetalEnabledInt != 0 && hostMetalQueue != nullptr;
 
@@ -946,6 +969,9 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
         const bool hasSource =
             fetchImage(sourceClip, time, hostMetal ? ImageStorage::Metal : ImageStorage::Cpu, &sourceImageHandle,
                        &source);
+        const bool hasDepth = depthClip &&
+            fetchImage(depthClip, time, hostMetal ? ImageStorage::Metal : ImageStorage::Cpu, &depthImageHandle,
+                       &depth);
         char *sourceBitDepth = nullptr;
         char *sourceComponents = nullptr;
         if (hasSource &&
@@ -981,6 +1007,8 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
           if (status == kOfxStatOK) {
             stage = "read_params";
             RenderParams params = readParams(instance, time);
+            params.hasDepth = hasDepth;
+            params.depth = depth;
             logPrintf(LogLevel::Debug,
                       "render",
                       "params mix=%.3f quality=%d lensIdentity=%d",
@@ -1114,6 +1142,9 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
 
   if (sourceImageHandle) {
     gEffectSuite->clipReleaseImage(sourceImageHandle);
+  }
+  if (depthImageHandle) {
+    gEffectSuite->clipReleaseImage(depthImageHandle);
   }
   if (outputImageHandle) {
     gEffectSuite->clipReleaseImage(outputImageHandle);

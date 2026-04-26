@@ -133,6 +133,13 @@ struct I {
   int renderY1;
   int renderX2;
   int renderY2;
+
+  int depthX1;
+  int depthY1;
+  int depthX2;
+  int depthY2;
+  int depthRowFloats;
+  int hasDepth;
 };
 
 struct CopyUniforms {
@@ -214,6 +221,33 @@ float4 loadPixel(const device PixelChannel *src, constant I &info, int x, int y)
 
 float4 sampleNearest(const device PixelChannel *src, constant I &info, float x, float y) {
   return loadPixel(src, info, int(floor(x + 0.5f)), int(floor(y + 0.5f)));
+}
+
+float sampleDepthBilinear(const device PixelChannel *depth, constant I &info, float x, float y) {
+  if (info.hasDepth == 0) return 0.5f;
+
+  int x0 = int(floor(x));
+  int y0 = int(floor(y));
+  float tx = x - float(x0);
+  float ty = y - float(y0);
+
+  int cx0 = clamp(x0, info.depthX1, info.depthX2 - 1) - info.depthX1;
+  int cx1 = clamp(x0 + 1, info.depthX1, info.depthX2 - 1) - info.depthX1;
+  int cy0 = clamp(y0, info.depthY1, info.depthY2 - 1) - info.depthY1;
+  int cy1 = clamp(y0 + 1, info.depthY1, info.depthY2 - 1) - info.depthY1;
+
+  int row0 = cy0 * info.depthRowFloats;
+  int row1 = cy1 * info.depthRowFloats;
+
+  float p00 = depth[row0 + cx0];
+  float p10 = depth[row0 + cx1];
+  float p01 = depth[row1 + cx0];
+  float p11 = depth[row1 + cx1];
+
+  float p0 = mix(p00, p10, tx);
+  float p1 = mix(p01, p11, tx);
+
+  return mix(p0, p1, ty);
 }
 
 float4 sampleBilinear(const device PixelChannel *src, constant I &info, float x, float y) {
@@ -454,7 +488,7 @@ float cappedCAPixels(constant P &p) {
   return min(p.lateralCA * p.lateralCAPixelScale, cap);
 }
 
-float4 opticalBaseSample(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, LocalMapping map) {
+float4 opticalBaseSample(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, LocalMapping map, const device PixelChannel *depth) {
   float caPixels = p.lateralCA * p.lateralCAPixelScale;
   float4 base = fastSourceSampleCA(src, info, p, map, 0.0f, 0.0f, 0.0f);
   if (caPixels > 0.01f) {
@@ -468,7 +502,8 @@ float4 opticalBaseSample(const device PixelChannel *src, constant I &info, const
     float nx = (x - cx) / max(1.0f, float(info.width) * 0.5f);
     float ny = (y - cy) / max(1.0f, float(info.height) * 0.5f);
     float edge = smoothstepf(0.15f, 1.05f, sqrt(nx * nx + ny * ny));
-    float focusBias = 0.35f + abs(p.focusDistance - 0.5f) * 1.3f;
+    float depthValue = sampleDepthBilinear(depth, info, x, y);
+    float focusBias = 0.35f + abs(p.focusDistance - depthValue) * 1.3f;
     float radiusPixels = p.longitudinalCA * focusBias * edge * 4.0f;
     float amount = clamp01(p.longitudinalCA * (0.35f + edge * 0.65f));
 
@@ -494,7 +529,7 @@ float4 opticalBaseSample(const device PixelChannel *src, constant I &info, const
   return base;
 }
 
-float4 edgeCharacter(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base, LocalMapping map, LensMap lm) {
+float4 edgeCharacter(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base, LocalMapping map, LensMap lm, const device PixelChannel *depth) {
   if (p.edgeBlur <= 0.001f && p.fieldCurvature <= 0.001f && p.tangentialSmear <= 0.001f &&
       p.horizontalSmear <= 0.001f && p.verticalSharpness <= 0.001f) {
     return base;
@@ -507,7 +542,9 @@ float4 edgeCharacter(const device PixelChannel *src, constant I &info, constant 
   float radius = max(lm.radius, sqrt(nx * nx + ny * ny));
   float edge = max(lm.edgeMask, smoothstepf(max(0.0f, 1.0f - p.radialFalloff), 1.15f, radius));
   float4 result = base;
-  float blurRadius = p.edgeBlur * edge * p.edgeBlurPixels + p.fieldCurvature * edge * p.fieldCurvaturePixels;
+  float depthValue = sampleDepthBilinear(depth, info, x, y);
+  float focusBias = 0.35f + abs(p.focusDistance - depthValue) * 1.3f;
+  float blurRadius = p.edgeBlur * edge * focusBias * p.edgeBlurPixels + p.fieldCurvature * edge * p.fieldCurvaturePixels;
   if (blurRadius > 0.05f) {
     float4 blur = 0.0f;
     float weight = 0.0f;
@@ -558,7 +595,7 @@ float highlightAt(const device PixelChannel *src, constant I &info, constant P &
   return smoothstepf(threshold, 1.0f, luminance(warpedSourceSample(src, info, p, x, y, 0.0f)));
 }
 
-float4 lensAdditives(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base, LocalMapping map, LensMap lm) {
+float4 lensAdditives(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base, LocalMapping map, LensMap lm, const device PixelChannel *depth) {
   float4 add = 0.0f;
   bool flareEnabled = p.flareIntensity > 0.001f && p.flareLength > 0.001f;
   bool bloomEnabled = (p.veil > 0.001f || p.highlightCream > 0.001f) && p.bloomRadius > 0.001f &&
@@ -568,6 +605,9 @@ float4 lensAdditives(const device PixelChannel *src, constant I &info, constant 
   if (!flareEnabled && !bloomEnabled && !ghostEnabled && !centerVeilEnabled) {
     return add;
   }
+
+  float depthValue = sampleDepthBilinear(depth, info, x, y);
+  float focusBias = 0.35f + abs(p.focusDistance - depthValue) * 1.3f;
 
   int flareSteps = cappedFlareSteps(p);
   float flareSpan = p.flareLength * float(info.width) * p.flareSpanScale * lensIdentityFlareScale(p);
@@ -587,7 +627,7 @@ float4 lensAdditives(const device PixelChannel *src, constant I &info, constant 
     }
   }
 
-  float bloomPixels = p.bloomRadius * p.bloomPixelScale;
+  float bloomPixels = p.bloomRadius * focusBias * p.bloomPixelScale;
   if (bloomEnabled && bloomPixels > 0.5f) {
     float cosR = p.bokehCos;
     float sinR = p.bokehSin;
@@ -707,6 +747,7 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
                                   device PixelChannel *dst [[buffer(1)]],
                                   constant P &p [[buffer(2)]],
                                   constant I &info [[buffer(3)]],
+                                  const device PixelChannel *depth [[buffer(4)]],
                                   uint2 gid [[thread_position_in_grid]]) {
   int x = info.renderX1 + int(gid.x);
   int y = info.renderY1 + int(gid.y);
@@ -759,9 +800,9 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
 
   LocalMapping map = { spCenter, spDx, spDy, caDirection };
 
-  float4 color = opticalBaseSample(src, info, p, float(x), float(y), map);
-  color = edgeCharacter(src, info, p, float(x), float(y), color, map, centerLm);
-  float4 add = lensAdditives(src, info, p, float(x), float(y), color, map, centerLm);
+  float4 color = opticalBaseSample(src, info, p, float(x), float(y), map, depth);
+  color = edgeCharacter(src, info, p, float(x), float(y), color, map, centerLm, depth);
+  float4 add = lensAdditives(src, info, p, float(x), float(y), color, map, centerLm, depth);
   color.xyz += add.xyz;
   color = applyVignetteAndGuides(color, float(x - info.sourceX1), float(y - info.sourceY1), info, p);
   color.w = original.w;

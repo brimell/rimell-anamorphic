@@ -141,6 +141,12 @@ struct MetalImageInfo {
   int renderY1;
   int renderX2;
   int renderY2;
+  int depthX1;
+  int depthY1;
+  int depthX2;
+  int depthY2;
+  int depthRowFloats;
+  int hasDepth;
 };
 
 struct CopyUniforms {
@@ -520,8 +526,14 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
 
     id<MTLBuffer> sourceBuffer = (__bridge id<MTLBuffer>)source.data;
     id<MTLBuffer> outputBuffer = (__bridge id<MTLBuffer>)output.data;
+    id<MTLBuffer> depthBuffer = params.hasDepth ? (__bridge id<MTLBuffer>)params.depth.data : nil;
     if (!sourceBuffer || !outputBuffer || sourceBuffer.device != device || outputBuffer.device != device) {
       logMessage(LogLevel::Error, "render.gpu", "invalid Metal buffers or device mismatch");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+    if (params.hasDepth && (!depthBuffer || depthBuffer.device != device)) {
+      logMessage(LogLevel::Error, "render.gpu", "invalid Metal depth buffer or device mismatch");
       timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
       return kOfxStatGPURenderFailed;
     }
@@ -587,6 +599,7 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
               params.debugView,
               params.mix,
               kernelName ? kernelName : "(null)");
+    int depthRowFloats = params.hasDepth ? params.depth.rowBytes / 4 : 0;
     MetalImageInfo info{
         source.bounds.x1,
         source.bounds.y1,
@@ -602,6 +615,12 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
         renderWindow.y1,
         renderWindow.x2,
         renderWindow.y2,
+        params.hasDepth ? params.depth.bounds.x1 : 0,
+        params.hasDepth ? params.depth.bounds.y1 : 0,
+        params.hasDepth ? params.depth.bounds.x2 : 0,
+        params.hasDepth ? params.depth.bounds.y2 : 0,
+        depthRowFloats,
+        params.hasDepth ? 1 : 0,
     };
 
     id<MTLBuffer> paramsBuffer = [device newBufferWithBytes:&packedParams
@@ -646,6 +665,9 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
     [encoder setBuffer:outputBuffer offset:0 atIndex:1];
     [encoder setBuffer:paramsBuffer offset:0 atIndex:2];
     [encoder setBuffer:infoBuffer offset:0 atIndex:3];
+    if (depthBuffer) {
+      [encoder setBuffer:depthBuffer offset:0 atIndex:4];
+    }
 
     const NSUInteger threadWidth = std::max<NSUInteger>(1, pipeline.threadExecutionWidth);
     const NSUInteger maxThreads = std::max<NSUInteger>(threadWidth, pipeline.maxTotalThreadsPerThreadgroup);

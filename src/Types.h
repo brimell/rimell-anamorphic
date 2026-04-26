@@ -146,6 +146,9 @@ struct RenderParams {
   float guideSafeStrength = 0.45f;
   int autoEdgeCrop = 0;
   float edgeCropScale = 1.0f;
+
+  bool hasDepth = false;
+  Image depth{};
 };
 
 } // namespace rimell
