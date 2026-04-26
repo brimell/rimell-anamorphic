@@ -758,10 +758,6 @@ bool fetchImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *ima
 
 bool fetchOptionalImage(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *imageHandle,
                         Image *image) {
-  if (!imageHandle || !image) {
-    return false;
-  }
-
   *imageHandle = nullptr;
   *image = {};
 
@@ -958,8 +954,8 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
             const bool depthClipAvailable = depthClip != nullptr;
             const bool depthClipIsConnected = clipConnected(depthClip);
             const bool depthImageFetched =
-              depthRequested && depthClipAvailable &&
-              fetchOptionalImage(depthClip, time, &depthImageHandle, &depth);
+              depthRequested && depthClipAvailable && depthClipIsConnected &&
+              fetchImage(depthClip, time, &depthImageHandle, &depth);
             bool hasDepth = depthImageFetched;
             logPrintf(LogLevel::Debug,
                   "render",
