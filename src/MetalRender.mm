@@ -489,6 +489,27 @@ float highlightAt(const device float* src, constant I& info, constant P& p, floa
 
 float4 lensAdditives(const device float* src, constant I& info, constant P& p, float x, float y, float4 base) {
   float4 add = 0.0f;
+  float flareAngle = p.flareAngle * kPi / 180.0f;
+  float dirX = cos(flareAngle);
+  float dirY = sin(flareAngle);
+  float sampleScale = qualityScale(p);
+  int flareCap = p.renderQuality == 2 ? 64 : 32;
+  int flareSteps = max(1, min(flareCap, int(round((2.0f + p.flareLength * p.flareStepDensity) * sampleScale))));
+  float flareSpan = p.flareLength * float(info.width) * p.flareSpanScale * lensIdentityFlareScale(p);
+  if (p.flareIntensity > 0.001f && flareSpan > 1.0f) {
+    for (int i = -flareSteps; i <= flareSteps; ++i) {
+      if (i == 0) {
+        continue;
+      }
+      float t = float(i) / float(flareSteps);
+      float h = highlightAt(src, info, p, x + dirX * t * flareSpan, y + dirY * t * flareSpan, p.flareThreshold);
+      float w = exp(-abs(t) * p.flareFalloff) * h * p.flareIntensity;
+      add.x += p.flareColourR * w;
+      add.y += p.flareColourG * w;
+      add.z += p.flareColourB * w;
+    }
+  }
+
   float bloomPixels = min(p.bloomRadius * p.bloomPixelScale, 48.0f);
   if ((p.veil > 0.001f || p.highlightCream > 0.001f) && bloomPixels > 0.5f) {
     float rotation = p.bokehRotation * kPi / 180.0f;
