@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <dlfcn.h>
+#include <sys/stat.h>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -290,6 +291,11 @@ bool renderWindowWithinOutput(const OfxRectI &renderWindow, const Image &output)
          renderWindow.x2 <= output.bounds.x2 && renderWindow.y2 <= output.bounds.y2;
 }
 
+bool fileExists(const std::string &path) {
+  struct stat st {};
+  return !path.empty() && stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+}
+
 std::string metallibPath() {
   static std::once_flag once;
   static std::string path;
@@ -314,6 +320,7 @@ std::string metallibPath() {
 
     const std::string contentsDir = contentsCandidate.substr(0, contentsSlash);
     path = contentsDir + "/Resources/RimellKernels.metallib";
+    logPrintf(LogLevel::Debug, "render.gpu", "resolved metallib path=%s", path.c_str());
   });
   return path;
 }
@@ -327,6 +334,10 @@ id<MTLLibrary> loadLibrary(id<MTLDevice> device) {
   const std::string path = metallibPath();
   if (path.empty()) {
     logMessage(LogLevel::Error, "render.gpu", "metallib path is empty");
+    return nil;
+  }
+  if (!fileExists(path)) {
+    logPrintf(LogLevel::Error, "render.gpu", "metallib does not exist at path=%s", path.c_str());
     return nil;
   }
 
@@ -442,133 +453,167 @@ id<MTLComputePipelineState> copyPipelineForDevice(id<MTLDevice> device) {
 
 OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image &output,
                            const OfxRectI &renderWindow, const RenderParams &params) {
-  ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalTyped");
-  timer.setResult("in_progress");
+  @autoreleasepool {
+    ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalTyped");
+    timer.setResult("in_progress");
 
-  if (!commandQueue || !source.data || !output.data) {
-    logMessage(LogLevel::Error, "render.gpu", "invalid queue/source/output pointers");
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
+    if (!commandQueue || !source.data || !output.data) {
+      logMessage(LogLevel::Error, "render.gpu", "invalid queue/source/output pointers");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
 
-  id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)commandQueue;
-  id<MTLDevice> device = deviceFromQueue(queue);
-  if (!queue || !device) {
-    logMessage(LogLevel::Error, "render.gpu", "invalid Metal command queue");
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
+    if (source.bounds.x1 != output.bounds.x1 || source.bounds.y1 != output.bounds.y1 ||
+        source.bounds.x2 != output.bounds.x2 || source.bounds.y2 != output.bounds.y2) {
+      logPrintf(LogLevel::Warn,
+                "render.gpu",
+                "source/output bounds differ source=[%d,%d,%d,%d] output=[%d,%d,%d,%d]",
+                source.bounds.x1,
+                source.bounds.y1,
+                source.bounds.x2,
+                source.bounds.y2,
+                output.bounds.x1,
+                output.bounds.y1,
+                output.bounds.x2,
+                output.bounds.y2);
+    }
 
-  id<MTLBuffer> sourceBuffer = (__bridge id<MTLBuffer>)source.data;
-  id<MTLBuffer> outputBuffer = (__bridge id<MTLBuffer>)output.data;
-  if (!sourceBuffer || !outputBuffer || sourceBuffer.device != device || outputBuffer.device != device) {
-    logMessage(LogLevel::Error, "render.gpu", "invalid Metal buffers or device mismatch");
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
+    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)commandQueue;
+    id<MTLDevice> device = deviceFromQueue(queue);
+    if (!queue || !device) {
+      logMessage(LogLevel::Error, "render.gpu", "invalid Metal command queue");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
 
-  if (!validateMetalImageLayout(source) || !validateMetalImageLayout(output) ||
-      !renderWindowWithinOutput(renderWindow, output)) {
-    logMessage(LogLevel::Error, "render.gpu", "invalid Metal source/output layout or render window");
-    timer.setResult(ofxStatusToString(kOfxStatFailed));
-    return kOfxStatFailed;
-  }
+    id<MTLBuffer> sourceBuffer = (__bridge id<MTLBuffer>)source.data;
+    id<MTLBuffer> outputBuffer = (__bridge id<MTLBuffer>)output.data;
+    if (!sourceBuffer || !outputBuffer || sourceBuffer.device != device || outputBuffer.device != device) {
+      logMessage(LogLevel::Error, "render.gpu", "invalid Metal buffers or device mismatch");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
 
-  id<MTLComputePipelineState> pipeline = pipelineForDevice(device);
-  if (!pipeline) {
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
+    if (!validateMetalImageLayout(source) || !validateMetalImageLayout(output) ||
+        !renderWindowWithinOutput(renderWindow, output)) {
+      logMessage(LogLevel::Error, "render.gpu", "invalid Metal source/output layout or render window");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
 
-  const int renderWidth = renderWindow.x2 - renderWindow.x1;
-  const int renderHeight = renderWindow.y2 - renderWindow.y1;
-  if (renderWidth <= 0 || renderHeight <= 0) {
-    logPrintf(LogLevel::Error, "render.gpu", "invalid render window width=%d height=%d", renderWidth, renderHeight);
-    timer.setResult(ofxStatusToString(kOfxStatErrValue));
-    return kOfxStatErrValue;
-  }
+    id<MTLComputePipelineState> pipeline = pipelineForDevice(device);
+    if (!pipeline) {
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
 
-  const int channelBytes = static_cast<int>(sizeof(float));
-  const int sourceRowFloats = source.rowBytes / channelBytes;
-  const int outputRowFloats = output.rowBytes / channelBytes;
-  if (sourceRowFloats <= 0 || outputRowFloats <= 0 || source.rowBytes % channelBytes != 0 ||
-      output.rowBytes % channelBytes != 0) {
-    logPrintf(LogLevel::Error,
-              "render.gpu",
-              "invalid rowBytes source=%d output=%d channelBytes=%d",
-              source.rowBytes,
-              output.rowBytes,
-              channelBytes);
-    timer.setResult(ofxStatusToString(kOfxStatErrValue));
-    return kOfxStatErrValue;
-  }
+    const int renderWidth = renderWindow.x2 - renderWindow.x1;
+    const int renderHeight = renderWindow.y2 - renderWindow.y1;
+    if (renderWidth <= 0 || renderHeight <= 0) {
+      logPrintf(LogLevel::Error, "render.gpu", "invalid render window width=%d height=%d", renderWidth, renderHeight);
+      timer.setResult(ofxStatusToString(kOfxStatErrValue));
+      return kOfxStatErrValue;
+    }
 
-  MetalParams packedParams = packParams(params);
-  MetalImageInfo info{
-      source.bounds.x1,
-      source.bounds.y1,
-      source.bounds.x2,
-      source.bounds.y2,
-      output.bounds.x1,
-      output.bounds.y1,
-      sourceRowFloats,
-      outputRowFloats,
-      source.bounds.x2 - source.bounds.x1,
-      source.bounds.y2 - source.bounds.y1,
-      renderWindow.x1,
-      renderWindow.y1,
-      renderWindow.x2,
-      renderWindow.y2,
-  };
-
-  id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
-  id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
-  if (!commandBuffer || !encoder) {
-    logMessage(LogLevel::Error, "render.gpu", "failed to create Metal command buffer/encoder");
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
-
-  id<MTLBuffer> paramsBuffer = [device newBufferWithBytes:&packedParams
-                                                   length:sizeof(packedParams)
-                                                  options:MTLResourceStorageModeShared];
-  id<MTLBuffer> infoBuffer = [device newBufferWithBytes:&info
-                                                 length:sizeof(info)
-                                                options:MTLResourceStorageModeShared];
-  if (!paramsBuffer || !infoBuffer) {
-    logMessage(LogLevel::Error, "render.gpu", "failed to create Metal uniform buffers");
-    [paramsBuffer release];
-    [infoBuffer release];
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
-
-  [encoder setComputePipelineState:pipeline];
-  [encoder setBuffer:sourceBuffer offset:0 atIndex:0];
-  [encoder setBuffer:outputBuffer offset:0 atIndex:1];
-  [encoder setBuffer:paramsBuffer offset:0 atIndex:2];
-  [encoder setBuffer:infoBuffer offset:0 atIndex:3];
-  [paramsBuffer release];
-  [infoBuffer release];
-
-  const NSUInteger threadWidth = std::max<NSUInteger>(1, pipeline.threadExecutionWidth);
-  const NSUInteger threadHeight = std::max<NSUInteger>(1, pipeline.maxTotalThreadsPerThreadgroup / threadWidth);
-  const MTLSize threadsPerGroup = MTLSizeMake(threadWidth, threadHeight, 1);
-  const MTLSize gridSize = MTLSizeMake(static_cast<NSUInteger>(renderWidth), static_cast<NSUInteger>(renderHeight), 1);
-
-  [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadsPerGroup];
-  [encoder endEncoding];
-  [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
-    if (cb.error) {
+    const int channelBytes = static_cast<int>(sizeof(float));
+    const int sourceRowFloats = source.rowBytes / channelBytes;
+    const int outputRowFloats = output.rowBytes / channelBytes;
+    if (sourceRowFloats <= 0 || outputRowFloats <= 0 || source.rowBytes % channelBytes != 0 ||
+        output.rowBytes % channelBytes != 0) {
       logPrintf(LogLevel::Error,
                 "render.gpu",
-                "command buffer failed: %s",
-                [[cb.error localizedDescription] UTF8String]);
+                "invalid rowBytes source=%d output=%d channelBytes=%d",
+                source.rowBytes,
+                output.rowBytes,
+                channelBytes);
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
     }
-  }];
-  [commandBuffer commit];
-  timer.setResult(ofxStatusToString(kOfxStatOK));
-  return kOfxStatOK;
+
+    const NSUInteger requiredSourceBytes =
+        static_cast<NSUInteger>(source.rowBytes) * static_cast<NSUInteger>(source.bounds.y2 - source.bounds.y1);
+    const NSUInteger requiredOutputBytes =
+        static_cast<NSUInteger>(output.rowBytes) * static_cast<NSUInteger>(output.bounds.y2 - output.bounds.y1);
+    if (sourceBuffer.length < requiredSourceBytes || outputBuffer.length < requiredOutputBytes) {
+      logPrintf(LogLevel::Error,
+                "render.gpu",
+                "Metal buffer too small sourceLen=%llu requiredSource=%llu outputLen=%llu requiredOutput=%llu",
+                static_cast<unsigned long long>(sourceBuffer.length),
+                static_cast<unsigned long long>(requiredSourceBytes),
+                static_cast<unsigned long long>(outputBuffer.length),
+                static_cast<unsigned long long>(requiredOutputBytes));
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    MetalParams packedParams = packParams(params);
+    MetalImageInfo info{
+        source.bounds.x1,
+        source.bounds.y1,
+        source.bounds.x2,
+        source.bounds.y2,
+        output.bounds.x1,
+        output.bounds.y1,
+        sourceRowFloats,
+        outputRowFloats,
+        source.bounds.x2 - source.bounds.x1,
+        source.bounds.y2 - source.bounds.y1,
+        renderWindow.x1,
+        renderWindow.y1,
+        renderWindow.x2,
+        renderWindow.y2,
+    };
+
+    id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+    id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+    if (!commandBuffer || !encoder) {
+      logMessage(LogLevel::Error, "render.gpu", "failed to create Metal command buffer/encoder");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    id<MTLBuffer> paramsBuffer = [device newBufferWithBytes:&packedParams
+                                                     length:sizeof(packedParams)
+                                                    options:MTLResourceStorageModeShared];
+    id<MTLBuffer> infoBuffer = [device newBufferWithBytes:&info
+                                                   length:sizeof(info)
+                                                  options:MTLResourceStorageModeShared];
+    if (!paramsBuffer || !infoBuffer) {
+      logMessage(LogLevel::Error, "render.gpu", "failed to create Metal uniform buffers");
+      [paramsBuffer release];
+      [infoBuffer release];
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    [encoder setComputePipelineState:pipeline];
+    [encoder setBuffer:sourceBuffer offset:0 atIndex:0];
+    [encoder setBuffer:outputBuffer offset:0 atIndex:1];
+    [encoder setBuffer:paramsBuffer offset:0 atIndex:2];
+    [encoder setBuffer:infoBuffer offset:0 atIndex:3];
+
+    const NSUInteger threadWidth = std::max<NSUInteger>(1, pipeline.threadExecutionWidth);
+    const NSUInteger maxThreads = std::max<NSUInteger>(threadWidth, pipeline.maxTotalThreadsPerThreadgroup);
+    const NSUInteger threadHeight = std::max<NSUInteger>(1, maxThreads / threadWidth);
+    const MTLSize threadsPerGroup = MTLSizeMake(threadWidth, threadHeight, 1);
+    const MTLSize gridSize = MTLSizeMake(static_cast<NSUInteger>(renderWidth), static_cast<NSUInteger>(renderHeight), 1);
+
+    [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadsPerGroup];
+    [encoder endEncoding];
+    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
+      if (cb.error) {
+        logPrintf(LogLevel::Error,
+                  "render.gpu",
+                  "command buffer failed: %s",
+                  [[cb.error localizedDescription] UTF8String]);
+      }
+      [paramsBuffer release];
+      [infoBuffer release];
+    }];
+    [commandBuffer commit];
+    timer.setResult(ofxStatusToString(kOfxStatOK));
+    return kOfxStatOK;
+  }
 }
 
 } // namespace
@@ -582,125 +627,159 @@ OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image 
 
 OfxStatus renderMetalCopyFloat(void *commandQueue, const Image &source, const Image &output,
                                const OfxRectI &renderWindow) {
-  ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalCopyFloat");
-  timer.setResult("in_progress");
+  @autoreleasepool {
+    ScopedLogTimer timer(LogLevel::Info, "render.gpu", "renderMetalCopyFloat");
+    timer.setResult("in_progress");
 
-  if (!commandQueue || !source.data || !output.data) {
-    logMessage(LogLevel::Error, "render.gpu", "invalid queue/source/output pointers");
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
+    if (!commandQueue || !source.data || !output.data) {
+      logMessage(LogLevel::Error, "render.gpu", "invalid queue/source/output pointers");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
 
-  id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)commandQueue;
-  id<MTLDevice> device = deviceFromQueue(queue);
-  if (!queue || !device) {
-    logMessage(LogLevel::Error, "render.gpu", "invalid Metal command queue");
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
+    if (source.bounds.x1 != output.bounds.x1 || source.bounds.y1 != output.bounds.y1 ||
+        source.bounds.x2 != output.bounds.x2 || source.bounds.y2 != output.bounds.y2) {
+      logPrintf(LogLevel::Warn,
+                "render.gpu",
+                "source/output bounds differ source=[%d,%d,%d,%d] output=[%d,%d,%d,%d]",
+                source.bounds.x1,
+                source.bounds.y1,
+                source.bounds.x2,
+                source.bounds.y2,
+                output.bounds.x1,
+                output.bounds.y1,
+                output.bounds.x2,
+                output.bounds.y2);
+    }
 
-  id<MTLBuffer> sourceBuffer = (__bridge id<MTLBuffer>)source.data;
-  id<MTLBuffer> outputBuffer = (__bridge id<MTLBuffer>)output.data;
-  if (!sourceBuffer || !outputBuffer || sourceBuffer.device != device || outputBuffer.device != device) {
-    logMessage(LogLevel::Error, "render.gpu", "invalid Metal buffers or device mismatch");
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
+    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)commandQueue;
+    id<MTLDevice> device = deviceFromQueue(queue);
+    if (!queue || !device) {
+      logMessage(LogLevel::Error, "render.gpu", "invalid Metal command queue");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
 
-  const int renderWidth = renderWindow.x2 - renderWindow.x1;
-  const int renderHeight = renderWindow.y2 - renderWindow.y1;
-  if (renderWidth <= 0 || renderHeight <= 0) {
-    logPrintf(LogLevel::Error,
-              "render.gpu",
-              "invalid render window width=%d height=%d",
-              renderWidth,
-              renderHeight);
-    timer.setResult(ofxStatusToString(kOfxStatErrValue));
-    return kOfxStatErrValue;
-  }
+    id<MTLBuffer> sourceBuffer = (__bridge id<MTLBuffer>)source.data;
+    id<MTLBuffer> outputBuffer = (__bridge id<MTLBuffer>)output.data;
+    if (!sourceBuffer || !outputBuffer || sourceBuffer.device != device || outputBuffer.device != device) {
+      logMessage(LogLevel::Error, "render.gpu", "invalid Metal buffers or device mismatch");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
 
-  if (!validateMetalImageLayout(source) || !validateMetalImageLayout(output) ||
-      !renderWindowWithinOutput(renderWindow, output)) {
-    logMessage(LogLevel::Error, "render.gpu", "invalid Metal source/output layout or render window");
-    timer.setResult(ofxStatusToString(kOfxStatFailed));
-    return kOfxStatFailed;
-  }
-
-  const int channelBytes = static_cast<int>(sizeof(float));
-  const int sourceRowFloats = source.rowBytes / channelBytes;
-  const int outputRowFloats = output.rowBytes / channelBytes;
-  if (sourceRowFloats <= 0 || outputRowFloats <= 0 || source.rowBytes % channelBytes != 0 ||
-      output.rowBytes % channelBytes != 0) {
-    logPrintf(LogLevel::Error,
-              "render.gpu",
-              "invalid rowBytes source=%d output=%d channelBytes=%d",
-              source.rowBytes,
-              output.rowBytes,
-              channelBytes);
-    timer.setResult(ofxStatusToString(kOfxStatErrValue));
-    return kOfxStatErrValue;
-  }
-
-  id<MTLComputePipelineState> pipeline = copyPipelineForDevice(device);
-  if (!pipeline) {
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
-
-  CopyUniforms uniforms{
-      source.bounds.x1,
-      source.bounds.y1,
-      sourceRowFloats,
-      output.bounds.x1,
-      output.bounds.y1,
-      outputRowFloats,
-      renderWindow.x1,
-      renderWindow.y1,
-      renderWindow.x2,
-      renderWindow.y2,
-  };
-
-  id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
-  id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
-  if (!commandBuffer || !encoder) {
-    logMessage(LogLevel::Error, "render.gpu", "failed to create Metal copy command buffer/encoder");
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
-
-  id<MTLBuffer> uniformsBuffer = [device newBufferWithBytes:&uniforms
-                                                     length:sizeof(uniforms)
-                                                    options:MTLResourceStorageModeShared];
-  if (!uniformsBuffer) {
-    logMessage(LogLevel::Error, "render.gpu", "failed to create Metal copy uniform buffer");
-    timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
-    return kOfxStatGPURenderFailed;
-  }
-
-  [encoder setComputePipelineState:pipeline];
-  [encoder setBuffer:sourceBuffer offset:0 atIndex:0];
-  [encoder setBuffer:outputBuffer offset:0 atIndex:1];
-  [encoder setBuffer:uniformsBuffer offset:0 atIndex:2];
-  [uniformsBuffer release];
-
-  const NSUInteger threadWidth = std::max<NSUInteger>(1, pipeline.threadExecutionWidth);
-  const NSUInteger threadHeight = std::max<NSUInteger>(1, pipeline.maxTotalThreadsPerThreadgroup / threadWidth);
-  const MTLSize threadsPerGroup = MTLSizeMake(threadWidth, threadHeight, 1);
-  const MTLSize gridSize = MTLSizeMake(static_cast<NSUInteger>(renderWidth), static_cast<NSUInteger>(renderHeight), 1);
-
-  [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadsPerGroup];
-  [encoder endEncoding];
-  [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
-    if (cb.error) {
+    const int renderWidth = renderWindow.x2 - renderWindow.x1;
+    const int renderHeight = renderWindow.y2 - renderWindow.y1;
+    if (renderWidth <= 0 || renderHeight <= 0) {
       logPrintf(LogLevel::Error,
                 "render.gpu",
-                "copy command buffer failed: %s",
-                [[cb.error localizedDescription] UTF8String]);
+                "invalid render window width=%d height=%d",
+                renderWidth,
+                renderHeight);
+      timer.setResult(ofxStatusToString(kOfxStatErrValue));
+      return kOfxStatErrValue;
     }
-  }];
-  [commandBuffer commit];
-  timer.setResult(ofxStatusToString(kOfxStatOK));
-  return kOfxStatOK;
+
+    if (!validateMetalImageLayout(source) || !validateMetalImageLayout(output) ||
+        !renderWindowWithinOutput(renderWindow, output)) {
+      logMessage(LogLevel::Error, "render.gpu", "invalid Metal source/output layout or render window");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    const int channelBytes = static_cast<int>(sizeof(float));
+    const int sourceRowFloats = source.rowBytes / channelBytes;
+    const int outputRowFloats = output.rowBytes / channelBytes;
+    if (sourceRowFloats <= 0 || outputRowFloats <= 0 || source.rowBytes % channelBytes != 0 ||
+        output.rowBytes % channelBytes != 0) {
+      logPrintf(LogLevel::Error,
+                "render.gpu",
+                "invalid rowBytes source=%d output=%d channelBytes=%d",
+                source.rowBytes,
+                output.rowBytes,
+                channelBytes);
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    const NSUInteger requiredSourceBytes =
+        static_cast<NSUInteger>(source.rowBytes) * static_cast<NSUInteger>(source.bounds.y2 - source.bounds.y1);
+    const NSUInteger requiredOutputBytes =
+        static_cast<NSUInteger>(output.rowBytes) * static_cast<NSUInteger>(output.bounds.y2 - output.bounds.y1);
+    if (sourceBuffer.length < requiredSourceBytes || outputBuffer.length < requiredOutputBytes) {
+      logPrintf(LogLevel::Error,
+                "render.gpu",
+                "Metal buffer too small sourceLen=%llu requiredSource=%llu outputLen=%llu requiredOutput=%llu",
+                static_cast<unsigned long long>(sourceBuffer.length),
+                static_cast<unsigned long long>(requiredSourceBytes),
+                static_cast<unsigned long long>(outputBuffer.length),
+                static_cast<unsigned long long>(requiredOutputBytes));
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    id<MTLComputePipelineState> pipeline = copyPipelineForDevice(device);
+    if (!pipeline) {
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    CopyUniforms uniforms{
+        source.bounds.x1,
+        source.bounds.y1,
+        sourceRowFloats,
+        output.bounds.x1,
+        output.bounds.y1,
+        outputRowFloats,
+        renderWindow.x1,
+        renderWindow.y1,
+        renderWindow.x2,
+        renderWindow.y2,
+    };
+
+    id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+    id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+    if (!commandBuffer || !encoder) {
+      logMessage(LogLevel::Error, "render.gpu", "failed to create Metal copy command buffer/encoder");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    id<MTLBuffer> uniformsBuffer = [device newBufferWithBytes:&uniforms
+                                                       length:sizeof(uniforms)
+                                                      options:MTLResourceStorageModeShared];
+    if (!uniformsBuffer) {
+      logMessage(LogLevel::Error, "render.gpu", "failed to create Metal copy uniform buffer");
+      timer.setResult(ofxStatusToString(kOfxStatGPURenderFailed));
+      return kOfxStatGPURenderFailed;
+    }
+
+    [encoder setComputePipelineState:pipeline];
+    [encoder setBuffer:sourceBuffer offset:0 atIndex:0];
+    [encoder setBuffer:outputBuffer offset:0 atIndex:1];
+    [encoder setBuffer:uniformsBuffer offset:0 atIndex:2];
+
+    const NSUInteger threadWidth = std::max<NSUInteger>(1, pipeline.threadExecutionWidth);
+    const NSUInteger maxThreads = std::max<NSUInteger>(threadWidth, pipeline.maxTotalThreadsPerThreadgroup);
+    const NSUInteger threadHeight = std::max<NSUInteger>(1, maxThreads / threadWidth);
+    const MTLSize threadsPerGroup = MTLSizeMake(threadWidth, threadHeight, 1);
+    const MTLSize gridSize = MTLSizeMake(static_cast<NSUInteger>(renderWidth), static_cast<NSUInteger>(renderHeight), 1);
+
+    [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadsPerGroup];
+    [encoder endEncoding];
+    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
+      if (cb.error) {
+        logPrintf(LogLevel::Error,
+                  "render.gpu",
+                  "copy command buffer failed: %s",
+                  [[cb.error localizedDescription] UTF8String]);
+      }
+      [uniformsBuffer release];
+    }];
+    [commandBuffer commit];
+    timer.setResult(ofxStatusToString(kOfxStatOK));
+    return kOfxStatOK;
+  }
 }
 
 void clearMetalPipelineCaches() {
