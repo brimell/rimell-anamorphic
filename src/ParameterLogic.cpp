@@ -692,6 +692,7 @@ RenderParams clampRenderParams(RenderParams params) {
 }
 
 RenderParams applyLookPreset(RenderParams params) {
+  bool appliedPreset = true;
   switch (params.lookPreset) {
   case kLookPresetCleanScope133:
     applyCleanScope(params);
@@ -739,7 +740,12 @@ RenderParams applyLookPreset(RenderParams params) {
     applyDebugNeutral(params);
     break;
   default:
+    appliedPreset = false;
     break;
+  }
+  if (appliedPreset) {
+    params.letterboxPreview = 1;
+    params.letterboxOpacity = 1.0f;
   }
   return params;
 }

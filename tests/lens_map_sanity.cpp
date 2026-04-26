@@ -165,6 +165,15 @@ int main() {
                    "debug neutral preset did not collapse to a safe baseline") &&
            passed;
 
+  for (int preset = rimell::kLookPresetCleanScope133; preset <= rimell::kLookPresetDebugNeutral; ++preset) {
+    rimell::RenderParams presetParams;
+    presetParams.lookPreset = preset;
+    presetParams = rimell::applyLookPreset(presetParams);
+    passed = require(presetParams.letterboxPreview == 1 && near(presetParams.letterboxOpacity, 1.0f),
+                     "look preset did not enable full-opacity letterbox") &&
+             passed;
+  }
+
   rimell::RenderParams normalizedPreset;
   normalizedPreset.lookPreset = rimell::kLookPresetNightPracticalFlares;
   normalizedPreset.edgeBlur = 0.42f;
