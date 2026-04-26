@@ -618,6 +618,8 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
 
 } // namespace
 
+} // namespace rimell
+
 namespace rimell {
 
 OfxStatus renderMetalFloat(void *commandQueue, const Image &source, const Image &output,
