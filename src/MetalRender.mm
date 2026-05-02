@@ -41,6 +41,41 @@ struct MetalParams {
   float bokehRotation;
   float bokehEdgeFalloff;
   float bokehStretchScale;
+  int enableBokeh;
+  float bokehAmount;
+  float focusWidth;
+  float focusFalloff;
+  float maxBokehRadius;
+  float nearBlurAmount;
+  float farBlurAmount;
+  float ovalRatio;
+  int ovalOrientation;
+  float ovalAngle;
+  int invertDepth;
+  float depthBlackPoint;
+  float depthWhitePoint;
+  float depthGamma;
+  int depthSmoothRadius;
+  float depthEdgeProtect;
+  float foregroundEdgeProtect;
+  float backgroundEdgeProtect;
+  float occlusionThreshold;
+  int highlightBokehEnable;
+  float highlightThreshold;
+  float highlightSoftness;
+  float highlightGain;
+  float highlightRadiusMultiplier;
+  float highlightSaturation;
+  float highlightRolloff;
+  float apertureSoftness;
+  float rimBrightness;
+  float centreDensity;
+  int bokehCAEnable;
+  float bokehCAAmount;
+  float catEyeAmount;
+  float catEyeStart;
+  float catEyeCompression;
+  float catEyeShift;
   float bloomPixelScale;
   float bloomThresholdScale;
   int bloomRings;
@@ -205,6 +240,41 @@ MetalParams packParams(const RenderParams &params) {
       params.bokehRotation,
       params.bokehEdgeFalloff,
       params.bokehStretchScale,
+      params.enableBokeh,
+      params.bokehAmount,
+      params.focusWidth,
+      params.focusFalloff,
+      params.maxBokehRadius,
+      params.nearBlurAmount,
+      params.farBlurAmount,
+      params.ovalRatio,
+      params.ovalOrientation,
+      params.ovalAngle,
+      params.invertDepth,
+      params.depthBlackPoint,
+      params.depthWhitePoint,
+      params.depthGamma,
+      params.depthSmoothRadius,
+      params.depthEdgeProtect,
+      params.foregroundEdgeProtect,
+      params.backgroundEdgeProtect,
+      params.occlusionThreshold,
+      params.highlightBokehEnable,
+      params.highlightThreshold,
+      params.highlightSoftness,
+      params.highlightGain,
+      params.highlightRadiusMultiplier,
+      params.highlightSaturation,
+      params.highlightRolloff,
+      params.apertureSoftness,
+      params.rimBrightness,
+      params.centreDensity,
+      params.bokehCAEnable,
+      params.bokehCAAmount,
+      params.catEyeAmount,
+      params.catEyeStart,
+      params.catEyeCompression,
+      params.catEyeShift,
       params.bloomPixelScale,
       params.bloomThresholdScale,
       params.bloomRings,
