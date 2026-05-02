@@ -316,6 +316,15 @@ float4 sampleBilinear(const device PixelChannel *src, constant I &info, float x,
   return mix(mix(p00, p10, tx), mix(p01, p11, tx), ty);
 }
 
+float4 sampleBilinearZero(const device PixelChannel *src, constant I &info, float x, float y) {
+  if (!isfinite(x) || !isfinite(y) ||
+      x < float(info.sourceX1) || y < float(info.sourceY1) ||
+      x > float(info.sourceX2 - 1) || y > float(info.sourceY2 - 1)) {
+    return float4(0.0f);
+  }
+  return sampleBilinear(src, info, x, y);
+}
+
 struct LocalMapping {
   float2 spCenter;
   float2 spDx;
@@ -487,6 +496,26 @@ float4 warpedSourceSample(const device PixelChannel *src, constant I &info, cons
   return sampleBilinear(src, info, sp.x, sp.y);
 }
 
+float4 warpedBokehSourceSample(const device PixelChannel *src,
+                               constant I &info,
+                               constant P &p,
+                               float dstX,
+                               float dstY,
+                               float caPixels) {
+  if (!isfinite(dstX) || !isfinite(dstY) ||
+      dstX < float(info.sourceX1) || dstY < float(info.sourceY1) ||
+      dstX > float(info.sourceX2 - 1) || dstY > float(info.sourceY2 - 1)) {
+    return float4(0.0f);
+  }
+
+  float2 cropped = applyEdgeCrop(dstX, dstY, info, p);
+  LensMap lm = buildLensMap(cropped.x, cropped.y, info, p);
+  float2 sp = lensMapToSourcePixel(lm, info);
+  float caMask = p.edgeOnlyCA > 0.5f ? smoothstepf(0.2f, 1.0f, lm.radius) : 1.0f;
+  sp += lm.caDirection * caPixels * caMask;
+  return sampleBilinearZero(src, info, sp.x, sp.y);
+}
+
 float qualityScale(constant P &p) {
   return p.renderQuality == 0 ? 0.35f : (p.renderQuality == 1 ? 0.65f : (p.renderQuality == 3 ? 1.5f : 1.0f));
 }
@@ -541,14 +570,15 @@ float smoothedDepthAt(const device PixelChannel *depth, constant I &info, consta
 }
 
 CoCInfo computeCoC(float depthValue, constant P &p) {
+  depthValue = isfinite(depthValue) ? depthValue : clamp01(p.focusDistance);
   float focus = clamp01(p.focusDistance);
   float delta = depthValue - focus;
   float nearAmount = delta < 0.0f ? smoothstepf(p.focusWidth, p.focusWidth + p.focusFalloff, -delta) : 0.0f;
   float farAmount = delta > 0.0f ? smoothstepf(p.focusWidth, p.focusWidth + p.focusFalloff, delta) : 0.0f;
-  float maxRadius = max(0.0f, p.maxBokehRadius);
+  float maxRadius = isfinite(p.maxBokehRadius) ? max(0.0f, p.maxBokehRadius) : 0.0f;
   CoCInfo c;
-  c.nearValue = min(maxRadius, nearAmount * maxRadius * p.nearBlurAmount);
-  c.farValue = min(maxRadius, farAmount * maxRadius * p.farBlurAmount);
+  c.nearValue = min(maxRadius, nearAmount * maxRadius * max(0.0f, p.nearBlurAmount));
+  c.farValue = min(maxRadius, farAmount * maxRadius * max(0.0f, p.farBlurAmount));
   c.total = min(maxRadius, max(c.nearValue, c.farValue));
   c.focusMask = clamp01(c.total / max(maxRadius, 0.00001f));
   return c;
@@ -607,25 +637,25 @@ float4 bokehSourceSample(const device PixelChannel *src,
                          float2 offsetPx,
                          bool allowCA) {
   if (!allowCA || p.bokehCAEnable == 0 || p.bokehCAAmount <= 0.0001f) {
-    return warpedSourceSample(src, info, p, x + offsetPx.x, y + offsetPx.y, 0.0f);
+    return warpedBokehSourceSample(src, info, p, x + offsetPx.x, y + offsetPx.y, 0.0f);
   }
 
   float len = length(offsetPx);
   float2 dir = len > 0.0001f ? offsetPx / len : float2(1.0f, 0.0f);
   float caPixels = p.bokehCAAmount * 4.0f;
-  float4 centre = warpedSourceSample(src, info, p, x + offsetPx.x, y + offsetPx.y, 0.0f);
-  float4 red = warpedSourceSample(src,
-                                  info,
-                                  p,
-                                  x + offsetPx.x + dir.x * caPixels,
-                                  y + offsetPx.y + dir.y * caPixels,
-                                  0.0f);
-  float4 blue = warpedSourceSample(src,
-                                   info,
-                                   p,
-                                   x + offsetPx.x - dir.x * caPixels,
-                                   y + offsetPx.y - dir.y * caPixels,
-                                   0.0f);
+  float4 centre = warpedBokehSourceSample(src, info, p, x + offsetPx.x, y + offsetPx.y, 0.0f);
+  float4 red = warpedBokehSourceSample(src,
+                                       info,
+                                       p,
+                                       x + offsetPx.x + dir.x * caPixels,
+                                       y + offsetPx.y + dir.y * caPixels,
+                                       0.0f);
+  float4 blue = warpedBokehSourceSample(src,
+                                        info,
+                                        p,
+                                        x + offsetPx.x - dir.x * caPixels,
+                                        y + offsetPx.y - dir.y * caPixels,
+                                        0.0f);
   return float4(red.x, centre.y, blue.z, centre.w);
 }
 
