@@ -4,7 +4,7 @@
 
 namespace rimell {
 
-inline constexpr int kCurrentParameterSchemaVersion = 1;
+inline constexpr int kCurrentParameterSchemaVersion = 2;
 
 enum ProcessingBackend {
   kBackendCpu = 0,
@@ -65,6 +65,41 @@ struct RenderParams {
   float bokehRotation = 0.0f;
   float bokehEdgeFalloff = 0.15f;
   float bokehStretchScale = 2.2f;
+  int enableBokeh = 0;
+  float bokehAmount = 0.45f;
+  float focusWidth = 0.08f;
+  float focusFalloff = 0.15f;
+  float maxBokehRadius = 18.0f;
+  float nearBlurAmount = 0.6f;
+  float farBlurAmount = 1.0f;
+  float ovalRatio = 1.65f;
+  int ovalOrientation = 0;
+  float ovalAngle = 0.0f;
+  int invertDepth = 0;
+  float depthBlackPoint = 0.0f;
+  float depthWhitePoint = 1.0f;
+  float depthGamma = 1.0f;
+  int depthSmoothRadius = 1;
+  float depthEdgeProtect = 8.0f;
+  float foregroundEdgeProtect = 12.0f;
+  float backgroundEdgeProtect = 6.0f;
+  float occlusionThreshold = 0.015f;
+  int highlightBokehEnable = 1;
+  float highlightThreshold = 0.75f;
+  float highlightSoftness = 0.35f;
+  float highlightGain = 0.35f;
+  float highlightRadiusMultiplier = 1.8f;
+  float highlightSaturation = 1.0f;
+  float highlightRolloff = 0.2f;
+  float apertureSoftness = 0.08f;
+  float rimBrightness = 0.2f;
+  float centreDensity = 0.05f;
+  int bokehCAEnable = 1;
+  float bokehCAAmount = 0.05f;
+  float catEyeAmount = 0.15f;
+  float catEyeStart = 0.45f;
+  float catEyeCompression = 0.3f;
+  float catEyeShift = 0.15f;
   float bloomPixelScale = 80.0f;
   float bloomThresholdScale = 0.75f;
   int bloomRings = 2;
