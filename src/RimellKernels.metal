@@ -569,16 +569,10 @@ int cappedBokehSamples(constant P &p) {
   return p.renderQuality == 0 ? 16 : (p.renderQuality == 1 ? 24 : (p.renderQuality == 3 ? 64 : 40));
 }
 
-float hash12(float2 p) {
-  float3 p3 = fract(float3(p.x, p.y, p.x) * 0.1031f);
-  p3 += dot(p3, p3.yzx + 33.33f);
-  return fract((p3.x + p3.y) * p3.z);
-}
-
-float2 apertureSample(int i, int n, float2 pixelSeed) {
+float2 apertureSample(int i, int n) {
   float goldenAngle = 2.39996323f;
   float r = sqrt((float(i) + 0.5f) / max(1.0f, float(n)));
-  float theta = float(i) * goldenAngle + hash12(pixelSeed) * 2.0f * kPi;
+  float theta = float(i) * goldenAngle;
   return float2(cos(theta), sin(theta)) * r;
 }
 
@@ -608,30 +602,29 @@ float bokehOcclusionWeight(float centreDepth, float sampleDepth, constant P &p) 
 float4 bokehSourceSample(const device PixelChannel *src,
                          constant I &info,
                          constant P &p,
-                         LocalMapping map,
+                         float x,
+                         float y,
                          float2 offsetPx,
                          bool allowCA) {
   if (!allowCA || p.bokehCAEnable == 0 || p.bokehCAAmount <= 0.0001f) {
-    return fastSourceSampleCA(src, info, p, map, offsetPx.x, offsetPx.y, 0.0f);
+    return warpedSourceSample(src, info, p, x + offsetPx.x, y + offsetPx.y, 0.0f);
   }
 
   float len = length(offsetPx);
   float2 dir = len > 0.0001f ? offsetPx / len : float2(1.0f, 0.0f);
   float caPixels = p.bokehCAAmount * 4.0f;
-  float4 centre = fastSourceSampleCA(src, info, p, map, offsetPx.x, offsetPx.y, 0.0f);
-  float4 red = fastSourceSampleCA(src,
+  float4 centre = warpedSourceSample(src, info, p, x + offsetPx.x, y + offsetPx.y, 0.0f);
+  float4 red = warpedSourceSample(src,
                                   info,
                                   p,
-                                  map,
-                                  offsetPx.x + dir.x * caPixels,
-                                  offsetPx.y + dir.y * caPixels,
+                                  x + offsetPx.x + dir.x * caPixels,
+                                  y + offsetPx.y + dir.y * caPixels,
                                   0.0f);
-  float4 blue = fastSourceSampleCA(src,
+  float4 blue = warpedSourceSample(src,
                                    info,
                                    p,
-                                   map,
-                                   offsetPx.x - dir.x * caPixels,
-                                   offsetPx.y - dir.y * caPixels,
+                                   x + offsetPx.x - dir.x * caPixels,
+                                   y + offsetPx.y - dir.y * caPixels,
                                    0.0f);
   return float4(red.x, centre.y, blue.z, centre.w);
 }
@@ -649,14 +642,13 @@ float4 depthAwareOvalGather(const device PixelChannel *src,
                             const device PixelChannel *depth,
                             constant I &info,
                             constant P &p,
-                            LocalMapping map,
                             float x,
                             float y,
                             float radius,
                             float centreDepth,
                             bool highlightOnly) {
   if (radius < 0.35f) {
-    float4 s = fastSourceSampleCA(src, info, p, map, 0.0f, 0.0f, 0.0f);
+    float4 s = warpedSourceSample(src, info, p, x, y, 0.0f);
     if (highlightOnly) {
       float h = highlightMask(s, p);
       return float4(saturateBokeh(s.xyz * h, p.highlightSaturation), s.w);
@@ -690,7 +682,7 @@ float4 depthAwareOvalGather(const device PixelChannel *src,
       continue;
     }
 
-    float2 aperture = apertureSample(i, sampleCount, float2(x, y));
+    float2 aperture = apertureSample(i, sampleCount);
     aperture += edgeDir * cat * p.catEyeShift;
     aperture.x *= 1.0f + abs(edgeDir.x) * cat * p.catEyeCompression;
     aperture.y *= 1.0f + abs(edgeDir.y) * cat * p.catEyeCompression;
@@ -712,7 +704,7 @@ float4 depthAwareOvalGather(const device PixelChannel *src,
       continue;
     }
 
-    float4 s = bokehSourceSample(src, info, p, map, offsetPx, highlightOnly);
+    float4 s = bokehSourceSample(src, info, p, x, y, offsetPx, highlightOnly);
     float3 rgb = s.xyz;
     if (highlightOnly) {
       float h = highlightMask(s, p);
@@ -939,7 +931,7 @@ float highlightAt(const device PixelChannel *src, constant I &info, constant P &
   return smoothstepf(threshold, 1.0f, luminance(warpedSourceSample(src, info, p, x, y, 0.0f)));
 }
 
-float4 lensAdditives(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base, LocalMapping map, LensMap lm, const device PixelChannel *depth) {
+float4 lensAdditives(const device PixelChannel *src, constant I &info, constant P &p, float x, float y, float4 base, LensMap lm, const device PixelChannel *depth) {
   float4 add = 0.0f;
   if (p.enableHighlightEffects == 0) {
     return add;
@@ -989,7 +981,8 @@ float4 lensAdditives(const device PixelChannel *src, constant I &info, constant 
         float a = 2.0f * kPi * float(i) / float(samplesPerRing);
         float ox = cos(a) * ringRadius / stretch;
         float oy = sin(a) * ringRadius * stretch;
-        float4 s = fastSourceSampleCA(src, info, p, map, ox * cosR - oy * sinR, ox * sinR + oy * cosR, 0.0f);
+        float2 offset = float2(ox * cosR - oy * sinR, ox * sinR + oy * cosR);
+        float4 s = warpedSourceSample(src, info, p, x + offset.x, y + offset.y, 0.0f);
         float h = smoothstepf(p.flareThreshold * p.bloomThresholdScale, 1.0f, luminance(s));
         float w = h / float(ring);
         bloom += s * w;
@@ -1188,7 +1181,6 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
                                              depth,
                                              info,
                                              p,
-                                             map,
                                              float(x),
                                              float(y),
                                              coc.total,
@@ -1206,7 +1198,6 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
                                                      depth,
                                                      info,
                                                      p,
-                                                     map,
                                                      float(x),
                                                      float(y),
                                                      highlightRadius,
@@ -1220,7 +1211,7 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
     }
   }
   if (p.enableHighlightEffects != 0) {
-    float4 add = lensAdditives(src, info, p, float(x), float(y), color, map, centerLm, depth);
+    float4 add = lensAdditives(src, info, p, float(x), float(y), color, centerLm, depth);
     color.xyz += add.xyz;
   }
   color = applyVignetteAndGuides(color, float(x - info.sourceX1), float(y - info.sourceY1), info, p);
