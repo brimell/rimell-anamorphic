@@ -124,6 +124,29 @@ void addStringFilePathParam(OfxParamSetHandle paramSet, const char *name, const 
   }
 }
 
+void addStringMultiLineParam(OfxParamSetHandle paramSet, const char *name, const char *label,
+                             const char *defaultValue, const char *hint, const char *parent) {
+  if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {
+    return;
+  }
+
+  OfxPropertySetHandle props = nullptr;
+  if (gParameterSuite->paramDefine(paramSet, kOfxParamTypeString, name, &props) != kOfxStatOK || !props) {
+    return;
+  }
+
+  gPropertySuite->propSetString(props, kOfxPropLabel, 0, label);
+  gPropertySuite->propSetString(props, kOfxParamPropStringMode, 0, kOfxParamStringIsMultiLine);
+  gPropertySuite->propSetString(props, kOfxParamPropDefault, 0, defaultValue ? defaultValue : "");
+  gPropertySuite->propSetInt(props, kOfxParamPropEnabled, 0, 1);
+  if (hint) {
+    gPropertySuite->propSetString(props, kOfxParamPropHint, 0, hint);
+  }
+  if (parent) {
+    gPropertySuite->propSetString(props, kOfxParamPropParent, 0, parent);
+  }
+}
+
 void addPushButtonParam(OfxParamSetHandle paramSet, const char *name, const char *label,
                         const char *hint, const char *parent) {
   if (!paramSet || !name || !label || !gParameterSuite || !gPropertySuite) {

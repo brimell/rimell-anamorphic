@@ -13,5 +13,6 @@ float aspectValue(int index, float customOutputAspect);
 const char *processingBackendName(int backend);
 
 std::string getStringParam(OfxParamSetHandle paramSet, const char *name, const std::string &fallback = "");
+void setStringParam(OfxParamSetHandle paramSet, const char *name, const std::string &value);
 
 } // namespace rimell

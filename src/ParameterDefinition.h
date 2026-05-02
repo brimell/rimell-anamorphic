@@ -21,6 +21,9 @@ void addStringParam(OfxParamSetHandle paramSet, const char *name, const char *la
 void addStringFilePathParam(OfxParamSetHandle paramSet, const char *name, const char *label,
                             const char *defaultValue = "", const char *hint = nullptr,
                             const char *parent = nullptr);
+void addStringMultiLineParam(OfxParamSetHandle paramSet, const char *name, const char *label,
+                             const char *defaultValue = "", const char *hint = nullptr,
+                             const char *parent = nullptr);
 void addPushButtonParam(OfxParamSetHandle paramSet, const char *name, const char *label,
                         const char *hint = nullptr, const char *parent = nullptr);
 void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *label,

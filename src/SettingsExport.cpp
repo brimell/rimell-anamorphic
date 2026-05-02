@@ -1,99 +1,81 @@
 #include "SettingsExport.h"
 #include "Diagnostics.h"
-#include <fstream>
 #include <sstream>
 #include <iomanip>
 
 namespace rimell {
 
-OfxStatus exportSettingsToFile(const RenderParams &params, const std::string &filePath) {
-  if (filePath.empty()) {
-    logPrintf(LogLevel::Warn, "export", "Export file path is empty");
-    return kOfxStatErrValue;
-  }
+std::string generateSettingsJson(const RenderParams &params) {
+  std::stringstream ss;
+  ss << "{\n";
+  ss << "  \"schemaVersion\": " << params.schemaVersion << ",\n";
+  ss << "  \"mix\": " << params.mix << ",\n";
+  ss << "  \"debugView\": " << params.debugView << ",\n";
+  ss << "  \"renderQuality\": " << params.renderQuality << ",\n";
+  ss << "  \"processingBackend\": " << params.processingBackend << ",\n";
+  ss << "  \"lookPreset\": " << params.lookPreset << ",\n";
+  ss << "  \"inputMode\": " << params.inputMode << ",\n";
+  ss << "  \"squeezeMode\": " << params.squeezeMode << ",\n";
+  ss << "  \"anamorphicTransfer\": " << params.anamorphicTransfer << ",\n";
+  ss << "  \"lensIdentity\": " << params.lensIdentity << ",\n";
+  ss << "  \"squeezeRatio\": " << params.squeezeRatio << ",\n";
+  ss << "  \"axisWarp\": " << params.axisWarp << ",\n";
+  ss << "  \"centerProtection\": " << params.centerProtection << ",\n";
+  ss << "  \"edgeCompressionStart\": " << params.edgeCompressionStart << ",\n";
+  ss << "  \"horizontalFovBoost\": " << params.horizontalFovBoost << ",\n";
+  ss << "  \"virtualFocalLength\": " << params.virtualFocalLength << ",\n";
+  ss << "  \"breathingScale\": " << params.breathingScale << ",\n";
+  ss << "  \"bokehStretch\": " << params.bokehStretch << ",\n";
+  ss << "  \"bokehRotation\": " << params.bokehRotation << ",\n";
+  ss << "  \"bokehEdgeFalloff\": " << params.bokehEdgeFalloff << ",\n";
+  ss << "  \"bokehStretchScale\": " << params.bokehStretchScale << ",\n";
+  ss << "  \"enableBokeh\": " << params.enableBokeh << ",\n";
+  ss << "  \"bokehAmount\": " << params.bokehAmount << ",\n";
+  ss << "  \"focusWidth\": " << params.focusWidth << ",\n";
+  ss << "  \"focusFalloff\": " << params.focusFalloff << ",\n";
+  ss << "  \"maxBokehRadius\": " << params.maxBokehRadius << ",\n";
+  ss << "  \"nearBlurAmount\": " << params.nearBlurAmount << ",\n";
+  ss << "  \"farBlurAmount\": " << params.farBlurAmount << ",\n";
+  ss << "  \"ovalRatio\": " << params.ovalRatio << ",\n";
+  ss << "  \"ovalOrientation\": " << params.ovalOrientation << ",\n";
+  ss << "  \"ovalAngle\": " << params.ovalAngle << ",\n";
+  ss << "  \"invertDepth\": " << params.invertDepth << ",\n";
+  ss << "  \"depthBlackPoint\": " << params.depthBlackPoint << ",\n";
+  ss << "  \"depthWhitePoint\": " << params.depthWhitePoint << ",\n";
+  ss << "  \"depthGamma\": " << params.depthGamma << ",\n";
+  ss << "  \"depthSmoothRadius\": " << params.depthSmoothRadius << ",\n";
+  ss << "  \"depthEdgeProtect\": " << params.depthEdgeProtect << ",\n";
+  ss << "  \"foregroundEdgeProtect\": " << params.foregroundEdgeProtect << ",\n";
+  ss << "  \"backgroundEdgeProtect\": " << params.backgroundEdgeProtect << ",\n";
+  ss << "  \"occlusionThreshold\": " << params.occlusionThreshold << ",\n";
+  ss << "  \"highlightBokehEnable\": " << params.highlightBokehEnable << ",\n";
+  ss << "  \"highlightThreshold\": " << params.highlightThreshold << ",\n";
+  ss << "  \"highlightSoftness\": " << params.highlightSoftness << ",\n";
+  ss << "  \"highlightGain\": " << params.highlightGain << ",\n";
+  ss << "  \"highlightRadiusMultiplier\": " << params.highlightRadiusMultiplier << ",\n";
+  ss << "  \"highlightSaturation\": " << params.highlightSaturation << ",\n";
+  ss << "  \"highlightRolloff\": " << params.highlightRolloff << ",\n";
+  ss << "  \"apertureSoftness\": " << params.apertureSoftness << ",\n";
+  ss << "  \"rimBrightness\": " << params.rimBrightness << ",\n";
+  ss << "  \"centreDensity\": " << params.centreDensity << ",\n";
+  ss << "  \"bokehCAEnable\": " << params.bokehCAEnable << ",\n";
+  ss << "  \"bokehCAAmount\": " << params.bokehCAAmount << ",\n";
+  ss << "  \"catEyeAmount\": " << params.catEyeAmount << ",\n";
+  ss << "  \"catEyeStart\": " << params.catEyeStart << ",\n";
+  ss << "  \"catEyeCompression\": " << params.catEyeCompression << ",\n";
+  ss << "  \"catEyeShift\": " << params.catEyeShift << ",\n";
+  ss << "  \"bloomPixelScale\": " << params.bloomPixelScale << ",\n";
+  ss << "  \"bloomThresholdScale\": " << params.bloomThresholdScale << ",\n";
+  ss << "  \"bloomRings\": " << params.bloomRings << ",\n";
+  ss << "  \"bloomSamplesPerRing\": " << params.bloomSamplesPerRing << ",\n";
+  ss << "  \"bloomEdgeKeepScale\": " << params.bloomEdgeKeepScale << ",\n";
+  ss << "  \"bloomVeilScale\": " << params.bloomVeilScale << ",\n";
+  ss << "  \"bloomCreamScale\": " << params.bloomCreamScale << ",\n";
+  ss << "  \"flareIntensity\": " << params.flareIntensity << ",\n";
+  ss << "  \"flareLength\": " << params.flareLength << "\n";
 
-  try {
-    std::ofstream file(filePath, std::ios::out | std::ios::trunc);
-    if (!file.is_open()) {
-      logPrintf(LogLevel::Error, "export", "Failed to open file for writing: %s", filePath.c_str());
-      return kOfxStatFailed;
-    }
-
-    file << "# Rimell Anamorphic Settings Export \n";
-    file << "[Parameters]\n";
-    file << "schemaVersion=" << params.schemaVersion << "\n";
-    file << "mix=" << params.mix << "\n";
-    file << "debugView=" << params.debugView << "\n";
-    file << "renderQuality=" << params.renderQuality << "\n";
-    file << "processingBackend=" << params.processingBackend << "\n";
-    file << "lookPreset=" << params.lookPreset << "\n";
-    file << "inputMode=" << params.inputMode << "\n";
-    file << "squeezeMode=" << params.squeezeMode << "\n";
-    file << "anamorphicTransfer=" << params.anamorphicTransfer << "\n";
-    file << "lensIdentity=" << params.lensIdentity << "\n";
-    file << "squeezeRatio=" << params.squeezeRatio << "\n";
-    file << "axisWarp=" << params.axisWarp << "\n";
-    file << "centerProtection=" << params.centerProtection << "\n";
-    file << "edgeCompressionStart=" << params.edgeCompressionStart << "\n";
-    file << "horizontalFovBoost=" << params.horizontalFovBoost << "\n";
-    file << "virtualFocalLength=" << params.virtualFocalLength << "\n";
-    file << "breathingScale=" << params.breathingScale << "\n";
-    file << "bokehStretch=" << params.bokehStretch << "\n";
-    file << "bokehRotation=" << params.bokehRotation << "\n";
-    file << "bokehEdgeFalloff=" << params.bokehEdgeFalloff << "\n";
-    file << "bokehStretchScale=" << params.bokehStretchScale << "\n";
-    file << "enableBokeh=" << params.enableBokeh << "\n";
-    file << "bokehAmount=" << params.bokehAmount << "\n";
-    file << "focusWidth=" << params.focusWidth << "\n";
-    file << "focusFalloff=" << params.focusFalloff << "\n";
-    file << "maxBokehRadius=" << params.maxBokehRadius << "\n";
-    file << "nearBlurAmount=" << params.nearBlurAmount << "\n";
-    file << "farBlurAmount=" << params.farBlurAmount << "\n";
-    file << "ovalRatio=" << params.ovalRatio << "\n";
-    file << "ovalOrientation=" << params.ovalOrientation << "\n";
-    file << "ovalAngle=" << params.ovalAngle << "\n";
-    file << "invertDepth=" << params.invertDepth << "\n";
-    file << "depthBlackPoint=" << params.depthBlackPoint << "\n";
-    file << "depthWhitePoint=" << params.depthWhitePoint << "\n";
-    file << "depthGamma=" << params.depthGamma << "\n";
-    file << "depthSmoothRadius=" << params.depthSmoothRadius << "\n";
-    file << "depthEdgeProtect=" << params.depthEdgeProtect << "\n";
-    file << "foregroundEdgeProtect=" << params.foregroundEdgeProtect << "\n";
-    file << "backgroundEdgeProtect=" << params.backgroundEdgeProtect << "\n";
-    file << "occlusionThreshold=" << params.occlusionThreshold << "\n";
-    file << "highlightBokehEnable=" << params.highlightBokehEnable << "\n";
-    file << "highlightThreshold=" << params.highlightThreshold << "\n";
-    file << "highlightSoftness=" << params.highlightSoftness << "\n";
-    file << "highlightGain=" << params.highlightGain << "\n";
-    file << "highlightRadiusMultiplier=" << params.highlightRadiusMultiplier << "\n";
-    file << "highlightSaturation=" << params.highlightSaturation << "\n";
-    file << "highlightRolloff=" << params.highlightRolloff << "\n";
-    file << "apertureSoftness=" << params.apertureSoftness << "\n";
-    file << "rimBrightness=" << params.rimBrightness << "\n";
-    file << "centreDensity=" << params.centreDensity << "\n";
-    file << "bokehCAEnable=" << params.bokehCAEnable << "\n";
-    file << "bokehCAAmount=" << params.bokehCAAmount << "\n";
-    file << "catEyeAmount=" << params.catEyeAmount << "\n";
-    file << "catEyeStart=" << params.catEyeStart << "\n";
-    file << "catEyeCompression=" << params.catEyeCompression << "\n";
-    file << "catEyeShift=" << params.catEyeShift << "\n";
-    file << "bloomPixelScale=" << params.bloomPixelScale << "\n";
-    file << "bloomThresholdScale=" << params.bloomThresholdScale << "\n";
-    file << "bloomRings=" << params.bloomRings << "\n";
-    file << "bloomSamplesPerRing=" << params.bloomSamplesPerRing << "\n";
-    file << "bloomEdgeKeepScale=" << params.bloomEdgeKeepScale << "\n";
-    file << "bloomVeilScale=" << params.bloomVeilScale << "\n";
-    file << "bloomCreamScale=" << params.bloomCreamScale << "\n";
-    file << "flareIntensity=" << params.flareIntensity << "\n";
-    file << "flareLength=" << params.flareLength << "\n";
-
-    file.close();
-    logPrintf(LogLevel::Info, "export", "Settings exported to: %s", filePath.c_str());
-    return kOfxStatOK;
-  } catch (const std::exception &ex) {
-    logPrintf(LogLevel::Error, "export", "Exception during export: %s", ex.what());
-    return kOfxStatErrUnknown;
-  }
+  ss << "}\n";
+  return ss.str();
 }
 
 } // namespace rimell

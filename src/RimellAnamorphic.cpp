@@ -334,16 +334,12 @@ OfxStatus pluginMain(const char *action, const void *handle, OfxPropertySetHandl
       stage = "instance_changed";
       char *changedName = nullptr;
       if (inArgs && gPropertySuite && gPropertySuite->propGetString(inArgs, kOfxPropName, 0, &changedName) == kOfxStatOK && changedName) {
-        if (std::strcmp(changedName, "exportSettings") == 0) {
+        if (std::strcmp(changedName, "generateJson") == 0) {
           OfxParamSetHandle paramSet = nullptr;
           if (gEffectSuite->getParamSet(effect, &paramSet) == kOfxStatOK) {
-            std::string exportPath = getStringParam(paramSet, "exportPath");
-            if (!exportPath.empty()) {
-              RenderParams params = readParams(effect);
-              exportSettingsToFile(params, exportPath);
-            } else {
-              logPrintf(LogLevel::Warn, "export", "Please set an export file path first");
-            }
+            RenderParams params = readParams(effect);
+            std::string jsonStr = generateSettingsJson(params);
+            setStringParam(paramSet, "settingsJson", jsonStr);
           }
           actionTimer.setResult("OK");
           return kOfxStatOK;

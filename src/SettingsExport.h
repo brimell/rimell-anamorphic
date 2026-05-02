@@ -5,6 +5,6 @@
 
 namespace rimell {
 
-OfxStatus exportSettingsToFile(const RenderParams &params, const std::string &filePath);
+std::string generateSettingsJson(const RenderParams &params);
 
 } // namespace rimell

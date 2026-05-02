@@ -76,6 +76,16 @@ std::string getStringParam(OfxParamSetHandle paramSet, const char *name, const s
   return value ? std::string(value) : fallback;
 }
 
+void setStringParam(OfxParamSetHandle paramSet, const char *name, const std::string &value) {
+  if (!paramSet || !name || !gParameterSuite) {
+    return;
+  }
+  if (OfxParamHandle handle = nullptr; 
+      gParameterSuite->paramGetHandle(paramSet, name, &handle, nullptr) == kOfxStatOK && handle) {
+    gParameterSuite->paramSetValue(handle, value.c_str());
+  }
+}
+
 double getDoubleParam(OfxParamSetHandle paramSet, const char *name, double fallback) {
   return getDoubleParamAtTime(paramSet, name, 0.0, fallback);
 }
