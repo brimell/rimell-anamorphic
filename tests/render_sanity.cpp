@@ -1,4 +1,5 @@
 #include "ParameterLogic.h"
+#include "PixelAccess.h"
 #include "RenderCore.h"
 
 #include <cmath>
@@ -71,6 +72,22 @@ int main() {
                        near(bokehClamp.maxBokehRadius, 80.0f) && near(bokehClamp.ovalRatio, 3.0f) &&
                        bokehClamp.depthSmoothRadius == 2 && near(bokehClamp.highlightThreshold, 8.0f),
                    "depth bokeh parameters were not clamped") &&
+           passed;
+
+  OfxRGBAColourF rows[4] = {
+      {0.1f, 0.2f, 0.3f, 1.0f},
+      {0.4f, 0.5f, 0.6f, 1.0f},
+      {0.7f, 0.8f, 0.9f, 1.0f},
+      {1.0f, 0.9f, 0.8f, 1.0f},
+  };
+  rimell::Image negativeStride;
+  negativeStride.data = rows + 2;
+  negativeStride.bounds = {0, 0, 2, 2};
+  negativeStride.rowBytes = -static_cast<int>(2 * sizeof(OfxRGBAColourF));
+  const rimell::Pixel topLeft = rimell::sampleNearest<OfxRGBAColourF>(negativeStride, 0.0f, 0.0f);
+  const rimell::Pixel bottomLeft = rimell::sampleNearest<OfxRGBAColourF>(negativeStride, 0.0f, 1.0f);
+  passed = require(near(topLeft.r, 0.7f) && near(bottomLeft.r, 0.1f),
+                   "negative rowBytes CPU addressing was rejected or misaddressed") &&
            passed;
 
   return passed ? 0 : 1;

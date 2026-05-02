@@ -10,7 +10,7 @@ namespace rimell {
 
 template <typename T>
 T *pixelAddress(const Image &image, int x, int y) {
-  if (image.storage != ImageStorage::Cpu || !image.data || image.rowBytes <= 0 ||
+  if (image.storage != ImageStorage::Cpu || !image.data || image.rowBytes == 0 ||
       x < image.bounds.x1 || x >= image.bounds.x2 ||
       y < image.bounds.y1 || y >= image.bounds.y2) {
     return nullptr;
