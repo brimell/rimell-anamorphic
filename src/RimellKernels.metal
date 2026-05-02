@@ -633,6 +633,13 @@ float2 apertureSampleVogel(int i, int n, float jitterAngle) {
   return float2(cos(theta), sin(theta)) * r;
 }
 
+float2 apertureSample(int i, int n) {
+  float goldenAngle = 2.39996323f;
+  float r = sqrt((float(i) + 0.5f) / max(1.0f, float(n)));
+  float theta = float(i) * goldenAngle;
+  return float2(cos(theta), sin(theta)) * r;
+}
+
 float apertureProfile(float r2, constant P &p) {
   if (r2 > 1.0f) {
     return 0.0f;
@@ -777,7 +784,13 @@ float4 depthAwareOvalGather(const device PixelChannel *src,
     weightSum += w;
   }
 
-  return acc / max(weightSum, 1e-6f);
+  if (weightSum <= 0.0f) {
+    return float4(0.0f);
+  }
+
+  float outAlpha = accumAlpha / weightSum;
+  float3 outRgb = accumRgb / max(accumAlpha, 0.00001f);
+  return float4(outRgb, outAlpha);
 }
 
 int cappedEdgeBlurSamples(constant P &p) {
