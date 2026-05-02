@@ -166,6 +166,55 @@ float edgeMaskAt(const Image &source, float x, float y, int width, int height,
   return clamp01(edge);
 }
 
+float normaliseDepthValue(float depthValue, const RenderParams &params) {
+  float normalized = params.invertDepth != 0 ? 1.0f - depthValue : depthValue;
+  normalized = (normalized - params.depthBlackPoint) /
+               std::max(params.depthWhitePoint - params.depthBlackPoint, 0.00001f);
+  normalized = clamp01(normalized);
+  return std::pow(normalized, std::max(params.depthGamma, 0.00001f));
+}
+
+template <typename T>
+float normalisedDepthAt(const RenderParams &params, float x, float y) {
+  if (!params.hasDepth || params.enableDepthMap == 0) {
+    return clamp01(params.focusDistance);
+  }
+  const float rawDepth = sampleBilinear<T>(params.depth, x, y).r;
+  return normaliseDepthValue(rawDepth, params);
+}
+
+template <typename T>
+float smoothedDepthAt(const RenderParams &params, float x, float y) {
+  const float centre = normalisedDepthAt<T>(params, x, y);
+  const int radius = std::min(std::max(params.depthSmoothRadius, 0), 2);
+  if (radius == 0 || !params.hasDepth || params.enableDepthMap == 0) {
+    return centre;
+  }
+
+  float sum = 0.0f;
+  float weightSum = 0.0f;
+  const float spatialSigma = std::max(1.0f, static_cast<float>(radius * radius));
+  const float rangeStrength = std::max(0.0f, params.depthEdgeProtect);
+  for (int oy = -2; oy <= 2; ++oy) {
+    for (int ox = -2; ox <= 2; ++ox) {
+      if (std::abs(ox) > radius || std::abs(oy) > radius) {
+        continue;
+      }
+      const float offsetX = static_cast<float>(ox);
+      const float offsetY = static_cast<float>(oy);
+      const float depth = normalisedDepthAt<T>(params, x + offsetX, y + offsetY);
+      const float spatial =
+          std::exp(-(offsetX * offsetX + offsetY * offsetY) / std::max(spatialSigma, 0.00001f));
+      const float range = std::exp(-std::abs(depth - centre) * rangeStrength);
+      const float weight = spatial * range;
+      sum += depth * weight;
+      weightSum += weight;
+    }
+  }
+
+  return weightSum > 0.0f ? sum / weightSum : centre;
+}
+
 float qualityScale(const RenderParams &params) {
   switch (params.renderQuality) {
   case 0:
@@ -668,6 +717,13 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
           }
 
           writePixelTyped(dst, debugColor);
+          ++localPixels;
+          continue;
+        }
+
+        if (params.previewDepthMap != 0) {
+          const float depthPreview = smoothedDepthAt<T>(params, static_cast<float>(x), static_cast<float>(y));
+          writePixelTyped(dst, {depthPreview, depthPreview, depthPreview, original.a});
           ++localPixels;
           continue;
         }

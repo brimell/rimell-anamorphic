@@ -111,6 +111,7 @@ struct P {
   float closeFocusMumps;
   float faceWidthCompensation;
   int enableDepthMap;
+  int previewDepthMap;
   float focusDistance;
   float breathingAmount;
   float mumpsScale;
@@ -1125,6 +1126,13 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
       }
     }
     writePixel(dst, outIndex, debugColor, original);
+    return;
+  }
+
+  if (p.previewDepthMap != 0) {
+    float depthValue = smoothedDepthAt(depth, info, p, float(x), float(y));
+    float4 previewColor = float4(depthValue, depthValue, depthValue, original.w);
+    writePixel(dst, outIndex, previewColor, original);
     return;
   }
 
