@@ -34,11 +34,27 @@ enum class DebugView {
   MetalIdentity = 4,
   MetalBilinear = 5,
   MetalBasicGeometry = 6,
+  RawDepth = 7,
+  NormalisedDepth = 8,
+  CoCMap = 9,
+  NearCoC = 10,
+  FarCoC = 11,
+  FocusMask = 12,
+  HighlightMask = 13,
+  BokehLayerOnly = 14,
+  CompositeDifference = 15,
 };
 
 constexpr unsigned int kMaxCpuRenderWorkers = 8;
 
 struct InstanceData {};
+
+struct CoCInfo {
+  float total = 0.0f;
+  float nearValue = 0.0f;
+  float farValue = 0.0f;
+  float focusMask = 0.0f;
+};
 
 const char *imageStorageName(ImageStorage storage) {
   switch (storage) {
@@ -229,6 +245,30 @@ float smoothedDepthAt(const RenderParams &params, float x, float y) {
   }
 
   return weightSum > 0.0f ? sum / weightSum : centre;
+}
+
+CoCInfo computeCoC(float depthValue, const RenderParams &params) {
+  depthValue = std::isfinite(depthValue) ? depthValue : clamp01(params.focusDistance);
+  const float focus = clamp01(params.focusDistance);
+  const float delta = depthValue - focus;
+  const float nearAmount = delta < 0.0f
+                               ? smoothstep(params.focusWidth, params.focusWidth + params.focusFalloff, -delta)
+                               : 0.0f;
+  const float farAmount = delta > 0.0f
+                              ? smoothstep(params.focusWidth, params.focusWidth + params.focusFalloff, delta)
+                              : 0.0f;
+  const float maxRadius = std::isfinite(params.maxBokehRadius) ? std::max(0.0f, params.maxBokehRadius) : 0.0f;
+
+  CoCInfo coc;
+  coc.nearValue = std::min(maxRadius, nearAmount * maxRadius * std::max(0.0f, params.nearBlurAmount));
+  coc.farValue = std::min(maxRadius, farAmount * maxRadius * std::max(0.0f, params.farBlurAmount));
+  coc.total = std::min(maxRadius, std::max(coc.nearValue, coc.farValue));
+  coc.focusMask = clamp01(coc.total / std::max(maxRadius, 0.00001f));
+  return coc;
+}
+
+float focusPreviewValue(float depthValue, const RenderParams &params) {
+  return 1.0f - computeCoC(depthValue, params).focusMask;
 }
 
 float qualityScale(const RenderParams &params) {
@@ -730,6 +770,35 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
             const float e =
                 edgeMaskAt(source, static_cast<float>(x), static_cast<float>(y), width, height, params);
             debugColor = {e, e, e, 1.0f};
+          } else if (debugView == DebugView::RawDepth) {
+            const float rawDepth = params.hasDepth && params.enableDepthMap != 0
+                                       ? sampleBilinear<T>(params.depth, static_cast<float>(x), static_cast<float>(y)).r
+                                       : clamp01(params.focusDistance);
+            debugColor = {rawDepth, rawDepth, rawDepth, 1.0f};
+          } else if (debugView == DebugView::NormalisedDepth) {
+            const float depthValue = smoothedDepthAt<T>(params, static_cast<float>(x), static_cast<float>(y));
+            debugColor = {depthValue, depthValue, depthValue, 1.0f};
+          } else if (debugView == DebugView::CoCMap || debugView == DebugView::NearCoC ||
+                     debugView == DebugView::FarCoC || debugView == DebugView::FocusMask) {
+            const float depthValue = smoothedDepthAt<T>(params, static_cast<float>(x), static_cast<float>(y));
+            const CoCInfo coc = computeCoC(depthValue, params);
+            const float maxRadius = std::max(params.maxBokehRadius, 0.00001f);
+            float value = 0.0f;
+            if (debugView == DebugView::CoCMap) {
+              value = clamp01(coc.total / maxRadius);
+            } else if (debugView == DebugView::NearCoC) {
+              value = clamp01(coc.nearValue / maxRadius);
+            } else if (debugView == DebugView::FarCoC) {
+              value = clamp01(coc.farValue / maxRadius);
+            } else {
+              value = focusPreviewValue(depthValue, params);
+            }
+            debugColor = {value, value, value, 1.0f};
+          } else if (debugView == DebugView::HighlightMask) {
+            const float h = smoothstep(params.highlightThreshold,
+                                       params.highlightThreshold + params.highlightSoftness,
+                                       luminance(original));
+            debugColor = {h, h, h, 1.0f};
           }
 
           writePixelTyped(dst, debugColor);
@@ -738,7 +807,8 @@ OfxStatus renderTyped(OfxImageEffectHandle instance, const Image &source, const 
         }
 
         if (params.previewDepthMap != 0) {
-          const float depthPreview = smoothedDepthAt<T>(params, static_cast<float>(x), static_cast<float>(y));
+          const float depthValue = smoothedDepthAt<T>(params, static_cast<float>(x), static_cast<float>(y));
+          const float depthPreview = focusPreviewValue(depthValue, params);
           writePixelTyped(dst, {depthPreview, depthPreview, depthPreview, original.a});
           ++localPixels;
           continue;

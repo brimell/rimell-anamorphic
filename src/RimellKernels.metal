@@ -1315,7 +1315,9 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
 
   if (p.previewDepthMap != 0) {
     float depthValue = smoothedDepthAt(depth, info, p, float(x), float(y));
-    float4 previewColor = float4(depthValue, depthValue, depthValue, original.w);
+    CoCInfo coc = computeCoC(depthValue, p);
+    float focusPreview = 1.0f - coc.focusMask;
+    float4 previewColor = float4(focusPreview, focusPreview, focusPreview, original.w);
     writePixel(dst, outIndex, previewColor, original);
     return;
   }

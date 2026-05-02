@@ -201,7 +201,8 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addBooleanParam(paramSet, "enableDepthMap", "Enable Depth Map", 1,
                   "Uses the connected Depth clip for focus separation and depth-aware bokeh.", "depthGroup");
   addBooleanParam(paramSet, "previewDepthMap", "Preview Depth Map", 0,
-                  "Shows the normalized depth map instead of the color image to assist in calibrating black/white points.", "depthGroup");
+                  "Shows a focus-aware depth preview driven by focus depth, width, falloff, and depth calibration.",
+                  "depthGroup");
   addBooleanParam(paramSet, "invertDepth", "Invert Depth", 0,
                   "Inverts the depth clip before normalisation. Internally 0 is near and 1 is far.",
                   "depthGroup");
