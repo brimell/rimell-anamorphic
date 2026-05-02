@@ -502,18 +502,7 @@ float4 warpedBokehSourceSample(const device PixelChannel *src,
                                float dstX,
                                float dstY,
                                float caPixels) {
-  if (!isfinite(dstX) || !isfinite(dstY) ||
-      dstX < float(info.sourceX1) || dstY < float(info.sourceY1) ||
-      dstX > float(info.sourceX2 - 1) || dstY > float(info.sourceY2 - 1)) {
-    return float4(0.0f);
-  }
-
-  float2 cropped = applyEdgeCrop(dstX, dstY, info, p);
-  LensMap lm = buildLensMap(cropped.x, cropped.y, info, p);
-  float2 sp = lensMapToSourcePixel(lm, info);
-  float caMask = p.edgeOnlyCA > 0.5f ? smoothstepf(0.2f, 1.0f, lm.radius) : 1.0f;
-  sp += lm.caDirection * caPixels * caMask;
-  return sampleBilinearZero(src, info, sp.x, sp.y);
+  return sampleBilinearZero(src, info, dstX, dstY);
 }
 
 float qualityScale(constant P &p) {
