@@ -490,6 +490,74 @@ float qualityScale(constant P &p) {
   return p.renderQuality == 0 ? 0.35f : (p.renderQuality == 1 ? 0.65f : (p.renderQuality == 3 ? 1.5f : 1.0f));
 }
 
+struct CoCInfo {
+  float total;
+  float nearValue;
+  float farValue;
+  float focusMask;
+};
+
+float normaliseDepthValue(float d, constant P &p) {
+  d = p.invertDepth != 0 ? 1.0f - d : d;
+  d = (d - p.depthBlackPoint) / max(p.depthWhitePoint - p.depthBlackPoint, 0.00001f);
+  d = clamp01(d);
+  return pow(d, max(p.depthGamma, 0.00001f));
+}
+
+float normalisedDepthAt(const device PixelChannel *depth, constant I &info, constant P &p, float x, float y) {
+  if (info.hasDepth == 0 || p.enableDepthMap == 0) {
+    return clamp01(p.focusDistance);
+  }
+  return normaliseDepthValue(sampleDepthBilinear(depth, info, x, y), p);
+}
+
+float smoothedDepthAt(const device PixelChannel *depth, constant I &info, constant P &p, float x, float y) {
+  float centre = normalisedDepthAt(depth, info, p, x, y);
+  int radius = min(max(p.depthSmoothRadius, 0), 2);
+  if (radius == 0 || info.hasDepth == 0 || p.enableDepthMap == 0) {
+    return centre;
+  }
+
+  float sum = 0.0f;
+  float weightSum = 0.0f;
+  float spatialSigma = max(1.0f, float(radius * radius));
+  float rangeStrength = max(0.0f, p.depthEdgeProtect);
+  for (int oy = -2; oy <= 2; ++oy) {
+    for (int ox = -2; ox <= 2; ++ox) {
+      if (abs(ox) > radius || abs(oy) > radius) {
+        continue;
+      }
+      float2 o = float2(float(ox), float(oy));
+      float d = normalisedDepthAt(depth, info, p, x + o.x, y + o.y);
+      float spatial = exp(-dot(o, o) / max(spatialSigma, 0.00001f));
+      float range = exp(-abs(d - centre) * rangeStrength);
+      float w = spatial * range;
+      sum += d * w;
+      weightSum += w;
+    }
+  }
+  return weightSum > 0.0f ? sum / weightSum : centre;
+}
+
+CoCInfo computeCoC(float depthValue, constant P &p) {
+  float focus = clamp01(p.focusDistance);
+  float delta = depthValue - focus;
+  float nearAmount = delta < 0.0f ? smoothstepf(p.focusWidth, p.focusWidth + p.focusFalloff, -delta) : 0.0f;
+  float farAmount = delta > 0.0f ? smoothstepf(p.focusWidth, p.focusWidth + p.focusFalloff, delta) : 0.0f;
+  float maxRadius = max(0.0f, p.maxBokehRadius);
+  CoCInfo c;
+  c.nearValue = min(maxRadius, nearAmount * maxRadius * p.nearBlurAmount);
+  c.farValue = min(maxRadius, farAmount * maxRadius * p.farBlurAmount);
+  c.total = min(maxRadius, max(c.nearValue, c.farValue));
+  c.focusMask = clamp01(c.total / max(maxRadius, 0.00001f));
+  return c;
+}
+
+float highlightMask(float4 color, constant P &p) {
+  float luma = luminance(color);
+  return smoothstepf(p.highlightThreshold, p.highlightThreshold + p.highlightSoftness, luma);
+}
+
 int cappedEdgeBlurSamples(constant P &p) {
   return p.renderQuality == 0 ? 1 : (p.renderQuality == 1 ? 2 : (p.renderQuality == 3 ? 6 : 4));
 }
@@ -876,6 +944,32 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
     } else if (p.debugView == 3) {
       float e = edgeMaskAt(info, p, float(x), float(y));
       debugColor = float4(e, e, e, 1.0f);
+    } else if (p.debugView == 7) {
+      float rawDepth = sampleDepthBilinear(depth, info, float(x), float(y));
+      debugColor = float4(rawDepth, rawDepth, rawDepth, 1.0f);
+    } else if (p.debugView == 8) {
+      float depthValue = smoothedDepthAt(depth, info, p, float(x), float(y));
+      debugColor = float4(depthValue, depthValue, depthValue, 1.0f);
+    } else if (p.debugView >= 9 && p.debugView <= 13) {
+      float depthValue = smoothedDepthAt(depth, info, p, float(x), float(y));
+      CoCInfo coc = computeCoC(depthValue, p);
+      float maxRadius = max(p.maxBokehRadius, 0.00001f);
+      if (p.debugView == 9) {
+        float v = clamp01(coc.total / maxRadius);
+        debugColor = float4(v, v, v, 1.0f);
+      } else if (p.debugView == 10) {
+        float v = clamp01(coc.nearValue / maxRadius);
+        debugColor = float4(v, v, v, 1.0f);
+      } else if (p.debugView == 11) {
+        float v = clamp01(coc.farValue / maxRadius);
+        debugColor = float4(v, v, v, 1.0f);
+      } else if (p.debugView == 12) {
+        float v = 1.0f - coc.focusMask;
+        debugColor = float4(v, v, v, 1.0f);
+      } else {
+        float h = highlightMask(original, p);
+        debugColor = float4(h, h, h, 1.0f);
+      }
     }
     writePixel(dst, outIndex, debugColor, original);
     return;
