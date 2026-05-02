@@ -434,21 +434,23 @@ Anamorphic lenses are associated with oval or elliptical out-of-focus highlights
 
 Rimell Anamorphic approximates this through:
 
-* oval highlight bloom
-* bokeh-style highlight shaping
-* stretch and rotation controls
+* true depth-aware bokeh rendering with focus width and falloff controls
+* oval highlight bloom and highlight gain thresholding
+* bokeh-style highlight shaping with adjustable stretch, aspect ratio, and angle
+* cat-eye style edge squashing and compression
+* bokeh chromatic aberration (CA) amount and scale
+* rim brightness and centre density controls for highlight definition
 * edge falloff
 * threshold scaling
 * bloom vignette dimming
-* cat-eye style edge dimming
 
-This remains an approximation rather than a physical lens solve. The plugin detects and reshapes highlight regions from the plate, with focus-style response controlled by image-space lens and edge behaviour.
+The plugin can use explicit depth-map inputs to drive occlusion-aware near and far blur limits with foreground and background edge protection. It also features independent highlight thresholding and contrast options for the bokeh response.
 
 ### 3. Differential depth of field
 
 Because an anamorphic lens has different optical behaviour in the horizontal and vertical planes, depth-of-field behaviour can feel different from a spherical lens.
 
-Rimell Anamorphic does not implement a physically complete depth-of-field model. Instead, it approximates the perceived result with edge falloff, focus distance response, edge blur, directional smear, oval highlight bloom, and vertical sharpness compensation.
+Rimell Anamorphic simulates this depth-of-field with full depth-map integration, providing independent near and far blur amounts as well as smooth depth handling. When no depth map is available, it approximates the perceived result with edge falloff, focus distance response, edge blur, directional smear, oval highlight bloom, and vertical sharpness compensation.
 
 ### 4. Horizontal flares
 
@@ -603,8 +605,8 @@ The plugin currently implements the following behaviour:
 * `Real Anamorphic Utility`, which is for already-squeezed footage
 * `Debug / Neutral`, a safe baseline for testing and reset
 
-These presets are exposed as starting points through the normal OFX parameter set. The individual controls remain public, so a host project can still keyframe or override the underlying look controls.
-The bokeh-heavy and depth-inspired presets can utilize depth-map input for enhanced focus separation and highlight bloom.
+These presets are exposed as starting points through the normal OFX parameter set. The selected preset remains active until manual edits are made. The individual controls remain public, so a host project can still keyframe or override the underlying look controls.
+Look presets also incorporate full-opacity letterboxing where appropriate. The bokeh-heavy and depth-inspired presets can fully utilize depth-map input for true depth-aware anamorphic bokeh, enhanced focus separation, and highlight bloom.
 
 ### 1. Input and geometry mode architecture
 
