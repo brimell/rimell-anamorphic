@@ -579,13 +579,18 @@ float2 rotate2D(float2 v, float radians) {
 }
 
 int cappedBokehSamples(constant P &p) {
-  return p.renderQuality == 0 ? 16 : (p.renderQuality == 1 ? 24 : (p.renderQuality == 3 ? 64 : 40));
+  return p.renderQuality == 0 ? 24 : (p.renderQuality == 1 ? 40 : (p.renderQuality == 3 ? 96 : 64));
 }
 
-float2 apertureSample(int i, int n) {
-  float goldenAngle = 2.39996323f;
-  float r = sqrt((float(i) + 0.5f) / max(1.0f, float(n)));
-  float theta = float(i) * goldenAngle;
+float hash12(float2 p) {
+  float h = sin(dot(p, float2(127.1f, 311.7f))) * 43758.5453123f;
+  return fract(h);
+}
+
+float2 apertureSampleVogel(int i, int n, float jitterAngle) {
+  float fi = float(i) + 0.5f;
+  float r = sqrt(fi / max(1.0f, float(n)));
+  float theta = fi * 2.39996323f + jitterAngle;
   return float2(cos(theta), sin(theta)) * r;
 }
 
@@ -660,8 +665,11 @@ float4 depthAwareOvalGather(const device PixelChannel *src,
                             float radius,
                             float centreDepth,
                             bool highlightOnly) {
+  (void)depth;
+  (void)centreDepth;
+
   if (radius < 0.35f) {
-    float4 s = warpedSourceSample(src, info, p, x, y, 0.0f);
+    float4 s = sampleBilinearZero(src, info, x, y);
     if (highlightOnly) {
       float h = highlightMask(s, p);
       return float4(saturateBokeh(s.xyz * h, p.highlightSaturation), s.w);
@@ -671,14 +679,32 @@ float4 depthAwareOvalGather(const device PixelChannel *src,
 
   float4 acc = float4(0.0f);
   float weightSum = 0.0f;
+  int tapCount = cappedBokehSamples(p);
+  float jitterAngle = hash12(float2(x, y)) * (2.0f * kPi);
+  float oval = max(1.0f, p.ovalRatio);
+  float customAngle = p.ovalAngle * (kPi / 180.0f);
 
-  for (int j = -2; j <= 2; ++j) {
-    for (int i = -2; i <= 2; ++i) {
-      float2 o = float2(float(i), float(j));
-      float w = exp(-0.5f * dot(o, o) / 2.0f);
-      acc += sampleBilinearZero(src, info, x + o.x, y + o.y) * w;
-      weightSum += w;
+  for (int i = 0; i < tapCount; ++i) {
+    float2 a = apertureSampleVogel(i, tapCount, jitterAngle);
+    float2 aperture = a;
+    if (p.ovalOrientation == 1) {
+      aperture.x *= oval;
+    } else {
+      aperture.y *= oval;
+      if (p.ovalOrientation == 2) {
+        aperture = rotate2D(aperture, customAngle);
+      }
     }
+
+    float2 offsetPx = aperture * radius;
+    float4 tap = sampleBilinearZero(src, info, x + offsetPx.x, y + offsetPx.y);
+    if (highlightOnly) {
+      float h = highlightMask(tap, p);
+      tap = float4(saturateBokeh(tap.xyz * h, p.highlightSaturation), tap.w);
+    }
+    float w = 1.0f;
+    acc += tap * w;
+    weightSum += w;
   }
 
   return acc / max(weightSum, 1e-6f);
