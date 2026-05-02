@@ -51,6 +51,7 @@ add_library(${OFX_PLUGIN_NAME} MODULE
   src/RenderCore.cpp
   src/Render.cpp
   src/RimellAnamorphic.cpp
+  src/SettingsExport.cpp
 )
 
 if(APPLE)

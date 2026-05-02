@@ -126,6 +126,11 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
             kCurrentParameterSchemaVersion, kCurrentParameterSchemaVersion, nullptr, "debugGroup");
   setParamFlags(paramSet, "schemaVersion", 1, 0, 1, 0);
 
+  addStringFilePathParam(paramSet, "exportPath", "Export File Path",
+                         "", "Full path where settings will be exported (.txt)", "debugGroup");
+  addPushButtonParam(paramSet, "exportSettings", "Export Settings",
+                     "Click to export current settings to the specified file path", "debugGroup");
+
   addChoiceParam(paramSet, "inputMode", "Input Mode", 0,
                  {"Spherical -> Anamorphic Look", "Real Anamorphic Utility", "Creative Warp"},
               "Spherical mode emulates an anamorphic finish from normal circular-lens footage.",

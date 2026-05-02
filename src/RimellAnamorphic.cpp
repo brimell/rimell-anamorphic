@@ -4,7 +4,9 @@
 #include "HostSuites.h"
 #include "MetalRender.h"
 #include "ParameterLogic.h"
+#include "Parameters.h"
 #include "Render.h"
+#include "SettingsExport.h"
 
 #include "ofxCore.h"
 #include "ofxImageEffect.h"
@@ -330,6 +332,23 @@ OfxStatus pluginMain(const char *action, const void *handle, OfxPropertySetHandl
     }
     if (std::strcmp(action, kOfxActionInstanceChanged) == 0) {
       stage = "instance_changed";
+      char *changedName = nullptr;
+      if (inArgs && gPropertySuite && gPropertySuite->propGetString(inArgs, kOfxPropName, 0, &changedName) == kOfxStatOK && changedName) {
+        if (std::strcmp(changedName, "exportSettings") == 0) {
+          OfxParamSetHandle paramSet = nullptr;
+          if (gEffectSuite->getParamSet(effect, &paramSet) == kOfxStatOK) {
+            std::string exportPath = getStringParam(paramSet, "exportPath");
+            if (!exportPath.empty()) {
+              RenderParams params = readParams(effect);
+              exportSettingsToFile(params, exportPath);
+            } else {
+              logPrintf(LogLevel::Warn, "export", "Please set an export file path first");
+            }
+          }
+          actionTimer.setResult("OK");
+          return kOfxStatOK;
+        }
+      }
       const OfxStatus status = isUserEditedChange(inArgs) ? clearPresetOnUserEdit(effect, inArgs)
                                                          : applyPresetChange(effect, inArgs);
       actionTimer.setResult(ofxStatusToString(status));

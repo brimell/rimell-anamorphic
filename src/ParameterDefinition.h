@@ -18,6 +18,11 @@ void addBooleanParam(OfxParamSetHandle paramSet, const char *name, const char *l
 void addStringParam(OfxParamSetHandle paramSet, const char *name, const char *label,
                           const char *defaultValue = "", const char *hint = nullptr,
                           const char *parent = nullptr);
+void addStringFilePathParam(OfxParamSetHandle paramSet, const char *name, const char *label,
+                            const char *defaultValue = "", const char *hint = nullptr,
+                            const char *parent = nullptr);
+void addPushButtonParam(OfxParamSetHandle paramSet, const char *name, const char *label,
+                        const char *hint = nullptr, const char *parent = nullptr);
 void addGroupParam(OfxParamSetHandle paramSet, const char *name, const char *label,
                          bool openByDefault = true, const char *hint = nullptr);
 void addPageParam(OfxParamSetHandle paramSet, const char *name, const char *label);

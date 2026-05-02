@@ -53,6 +53,29 @@ int getIntParamAtTime(OfxParamSetHandle paramSet, const char *name, OfxTime time
 Vec3 getRGBParamAtTime(OfxParamSetHandle paramSet, const char *name, OfxTime time, Vec3 fallback);
 RenderParams readParams(OfxImageEffectHandle effect, OfxTime time);
 
+std::string getStringParam(OfxParamSetHandle paramSet, const char *name, const std::string &fallback) {
+  if (!paramSet || !name || !gParameterSuite) {
+    return fallback;
+  }
+
+  OfxParamHandle handle = nullptr;
+  const OfxStatus handleStatus = gParameterSuite->paramGetHandle(paramSet, name, &handle, nullptr);
+  if (handleStatus != kOfxStatOK || !handle) {
+    logMissingParamOnce(name, handleStatus);
+    return fallback;
+  }
+
+  char *value = nullptr;
+  const OfxStatus valueStatus = gParameterSuite->paramGetValueAtTime
+                                    ? gParameterSuite->paramGetValueAtTime(handle, 0.0, &value)
+                                    : gParameterSuite->paramGetValue(handle, &value);
+  if (valueStatus != kOfxStatOK) {
+    logParamReadFailureOnce(name, valueStatus);
+    return fallback;
+  }
+  return value ? std::string(value) : fallback;
+}
+
 double getDoubleParam(OfxParamSetHandle paramSet, const char *name, double fallback) {
   return getDoubleParamAtTime(paramSet, name, 0.0, fallback);
 }
