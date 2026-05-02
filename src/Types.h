@@ -188,6 +188,7 @@ struct RenderParams {
   float edgeCropScale = 1.0f;
 
   bool hasDepth = false;
+  int depthComponents = 1;
   Image depth{};
 };
 

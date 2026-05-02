@@ -124,6 +124,22 @@ bool validateMetalImageLayout(const Image &image) {
   return image.data && image.rowBytes > 0 && width > 0 && height > 0;
 }
 
+int componentCountForImageComponents(const char *components) {
+  if (!components) {
+    return 0;
+  }
+  if (std::strcmp(components, kOfxImageComponentRGBA) == 0) {
+    return 4;
+  }
+  if (std::strcmp(components, kOfxImageComponentRGB) == 0) {
+    return 3;
+  }
+  if (std::strcmp(components, kOfxImageComponentAlpha) == 0) {
+    return 1;
+  }
+  return 0;
+}
+
 void logImageLayout(LogLevel level, const char *scope, const char *name, const Image &image,
                     int bytesPerPixel, bool valid) {
   const int width = image.bounds.x2 - image.bounds.x1;
@@ -1106,6 +1122,23 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
         const bool hasDepth = params.enableDepthMap != 0 && depthClip &&
             fetchImage(depthClip, time, hostMetal ? ImageStorage::Metal : ImageStorage::Cpu, &depthImageHandle,
                        &depth);
+        char *depthComponents = nullptr;
+        int depthComponentCount = 1;
+        if (hasDepth) {
+          if (!getImageString(depthImageHandle, kOfxImageEffectPropComponents, &depthComponents)) {
+            status = kOfxStatErrUnsupported;
+            logMessage(LogLevel::Error, "render", "failed to read depth clip components");
+          } else {
+            depthComponentCount = componentCountForImageComponents(depthComponents);
+            if (depthComponentCount == 0) {
+              status = kOfxStatErrUnsupported;
+              logPrintf(LogLevel::Error,
+                        "render",
+                        "unsupported depth clip components=%s",
+                        depthComponents ? depthComponents : "(null)");
+            }
+          }
+        }
         char *sourceBitDepth = nullptr;
         char *sourceComponents = nullptr;
         if (hasSource &&
@@ -1141,6 +1174,7 @@ OfxStatus render(OfxImageEffectHandle instance, OfxPropertySetHandle inArgs) {
           if (status == kOfxStatOK) {
             stage = "read_params";
             params.hasDepth = hasDepth;
+            params.depthComponents = depthComponentCount;
             params.depth = depth;
             logPrintf(LogLevel::Debug,
                       "render",

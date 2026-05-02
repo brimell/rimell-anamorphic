@@ -186,6 +186,7 @@ struct MetalImageInfo {
   int depthX2;
   int depthY2;
   int depthRowFloats;
+  int depthComponents;
   int hasDepth;
 };
 
@@ -680,6 +681,7 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
               params.mix,
               kernelName ? kernelName : "(null)");
     int depthRowFloats = params.hasDepth ? params.depth.rowBytes / 4 : 0;
+    int depthComponents = params.hasDepth ? std::max(1, params.depthComponents) : 1;
     MetalImageInfo info{
         source.bounds.x1,
         source.bounds.y1,
@@ -700,6 +702,7 @@ OfxStatus renderMetalTyped(void *commandQueue, const Image &source, const Image 
         params.hasDepth ? params.depth.bounds.x2 : 0,
         params.hasDepth ? params.depth.bounds.y2 : 0,
         depthRowFloats,
+        depthComponents,
         params.hasDepth ? 1 : 0,
     };
 

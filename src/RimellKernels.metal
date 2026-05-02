@@ -179,6 +179,7 @@ struct I {
   int depthX2;
   int depthY2;
   int depthRowFloats;
+  int depthComponents;
   int hasDepth;
 };
 
@@ -263,6 +264,14 @@ float4 sampleNearest(const device PixelChannel *src, constant I &info, float x, 
   return loadPixel(src, info, int(floor(x + 0.5f)), int(floor(y + 0.5f)));
 }
 
+float loadDepthPixel(const device PixelChannel *depth, constant I &info, int x, int y) {
+  int cx = clamp(x, info.depthX1, info.depthX2 - 1) - info.depthX1;
+  int cy = clamp(y, info.depthY1, info.depthY2 - 1) - info.depthY1;
+  int components = max(info.depthComponents, 1);
+  int idx = cy * info.depthRowFloats + cx * components;
+  return depth[idx];
+}
+
 float sampleDepthBilinear(const device PixelChannel *depth, constant I &info, float x, float y) {
   if (info.hasDepth == 0) return 0.5f;
 
@@ -271,18 +280,10 @@ float sampleDepthBilinear(const device PixelChannel *depth, constant I &info, fl
   float tx = x - float(x0);
   float ty = y - float(y0);
 
-  int cx0 = clamp(x0, info.depthX1, info.depthX2 - 1) - info.depthX1;
-  int cx1 = clamp(x0 + 1, info.depthX1, info.depthX2 - 1) - info.depthX1;
-  int cy0 = clamp(y0, info.depthY1, info.depthY2 - 1) - info.depthY1;
-  int cy1 = clamp(y0 + 1, info.depthY1, info.depthY2 - 1) - info.depthY1;
-
-  int row0 = cy0 * info.depthRowFloats;
-  int row1 = cy1 * info.depthRowFloats;
-
-  float p00 = depth[row0 + cx0];
-  float p10 = depth[row0 + cx1];
-  float p01 = depth[row1 + cx0];
-  float p11 = depth[row1 + cx1];
+  float p00 = loadDepthPixel(depth, info, x0, y0);
+  float p10 = loadDepthPixel(depth, info, x0 + 1, y0);
+  float p01 = loadDepthPixel(depth, info, x0, y0 + 1);
+  float p11 = loadDepthPixel(depth, info, x0 + 1, y0 + 1);
 
   float p0 = mix(p00, p10, tx);
   float p1 = mix(p01, p11, tx);
