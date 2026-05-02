@@ -118,6 +118,7 @@ struct MetalParams {
   float verticalCompensationScale;
   float closeFocusMumps;
   float faceWidthCompensation;
+  int enableDepthMap;
   float focusDistance;
   float breathingAmount;
   float mumpsScale;
@@ -317,6 +318,7 @@ MetalParams packParams(const RenderParams &params) {
       params.verticalCompensationScale,
       params.closeFocusMumps,
       params.faceWidthCompensation,
+      params.enableDepthMap,
       params.focusDistance,
       params.breathingAmount,
       params.mumpsScale,

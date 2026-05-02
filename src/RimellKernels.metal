@@ -110,6 +110,7 @@ struct P {
   float verticalCompensationScale;
   float closeFocusMumps;
   float faceWidthCompensation;
+  int enableDepthMap;
   float focusDistance;
   float breathingAmount;
   float mumpsScale;
