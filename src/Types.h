@@ -145,6 +145,7 @@ struct RenderParams {
   float closeFocusMumps = 0.0f;
   float faceWidthCompensation = 0.0f;
   int enableDepthMap = 1;
+  int previewDepthMap = 0;
   float focusDistance = 0.5f;
   float breathingAmount = 0.0f;
   float mumpsScale = 0.28f;
