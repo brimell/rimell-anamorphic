@@ -716,33 +716,64 @@ float4 depthAwareOvalGather(const device PixelChannel *src,
     return s;
   }
 
-  float4 acc = float4(0.0f);
+  float radiusX = radius;
+  float radiusY = radius * max(1.0f, p.ovalRatio);
+  float angle = 0.0f;
+  if (p.ovalOrientation == 1) {
+    radiusX = radius * max(1.0f, p.ovalRatio);
+    radiusY = radius;
+  } else if (p.ovalOrientation == 2) {
+    angle = p.ovalAngle * kPi / 180.0f;
+  }
+
+  float2 screen = float2((x - float(info.sourceX1)) / max(1.0f, float(info.width)),
+                         (y - float(info.sourceY1)) / max(1.0f, float(info.height))) *
+                  2.0f - 1.0f;
+  float edgeLen = length(screen);
+  float2 edgeDir = edgeLen > 0.0001f ? screen / edgeLen : float2(0.0f, 0.0f);
+  float cat = smoothstepf(p.catEyeStart, 1.0f, edgeLen) * p.catEyeAmount;
+
+  int sampleCount = cappedBokehSamples(p);
+  float3 accumRgb = 0.0f;
+  float accumAlpha = 0.0f;
   float weightSum = 0.0f;
-  int tapCount = cappedBokehSamples(p);
-  float jitterAngle = hash12(float2(x, y)) * (2.0f * kPi);
-  float oval = max(1.0f, p.ovalRatio);
-  float customAngle = p.ovalAngle * (kPi / 180.0f);
-
-  for (int i = 0; i < tapCount; ++i) {
-    float2 a = apertureSampleVogel(i, tapCount, jitterAngle);
-    float2 aperture = a;
-    if (p.ovalOrientation == 1) {
-      aperture.x *= oval;
-    } else {
-      aperture.y *= oval;
-      if (p.ovalOrientation == 2) {
-        aperture = rotate2D(aperture, customAngle);
-      }
+  for (int i = 0; i < 64; ++i) {
+    if (i >= sampleCount) {
+      continue;
     }
 
-    float2 offsetPx = aperture * radius;
-    float4 tap = sampleBilinearZero(src, info, x + offsetPx.x, y + offsetPx.y);
+    float2 aperture = apertureSample(i, sampleCount);
+    aperture += edgeDir * cat * p.catEyeShift;
+    aperture.x *= 1.0f + abs(edgeDir.x) * cat * p.catEyeCompression;
+    aperture.y *= 1.0f + abs(edgeDir.y) * cat * p.catEyeCompression;
+    float r2 = dot(aperture, aperture);
+    float apertureWeight = apertureProfile(r2, p);
+    if (apertureWeight <= 0.0f) {
+      continue;
+    }
+
+    float2 offsetPx = float2(aperture.x * radiusX, aperture.y * radiusY);
+    if (angle != 0.0f) {
+      offsetPx = rotate2D(offsetPx, angle);
+    }
+
+    float sampleDepth = smoothedDepthAt(depth, info, p, x + offsetPx.x, y + offsetPx.y);
+    float depthWeight = bokehOcclusionWeight(centreDepth, sampleDepth, p);
+    float w = apertureWeight * depthWeight;
+    if (w <= 0.0f) {
+      continue;
+    }
+
+    float4 s = bokehSourceSample(src, info, p, x, y, offsetPx, highlightOnly);
+    float3 rgb = s.xyz;
     if (highlightOnly) {
-      float h = highlightMask(tap, p);
-      tap = float4(saturateBokeh(tap.xyz * h, p.highlightSaturation), tap.w);
+      float h = highlightMask(s, p);
+      rgb = saturateBokeh(rgb * h, p.highlightSaturation);
     }
-    float w = 1.0f;
-    acc += tap * w;
+
+    float alpha = clamp01(s.w);
+    accumRgb += rgb * alpha * w;
+    accumAlpha += alpha * w;
     weightSum += w;
   }
 
