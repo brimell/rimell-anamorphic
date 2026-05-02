@@ -59,5 +59,19 @@ int main() {
                    "letterbox preview did not dim outside content") &&
            passed;
 
+  rimell::RenderParams bokehClamp;
+  bokehClamp.enableBokeh = 5;
+  bokehClamp.debugView = 99;
+  bokehClamp.maxBokehRadius = 200.0f;
+  bokehClamp.ovalRatio = 8.0f;
+  bokehClamp.depthSmoothRadius = 10;
+  bokehClamp.highlightThreshold = 20.0f;
+  bokehClamp = rimell::normalizeRenderParams(bokehClamp);
+  passed = require(bokehClamp.enableBokeh == 1 && bokehClamp.debugView == 15 &&
+                       near(bokehClamp.maxBokehRadius, 80.0f) && near(bokehClamp.ovalRatio, 3.0f) &&
+                       bokehClamp.depthSmoothRadius == 2 && near(bokehClamp.highlightThreshold, 8.0f),
+                   "depth bokeh parameters were not clamped") &&
+           passed;
+
   return passed ? 0 : 1;
 }
