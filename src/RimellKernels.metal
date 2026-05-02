@@ -569,10 +569,16 @@ int cappedBokehSamples(constant P &p) {
   return p.renderQuality == 0 ? 16 : (p.renderQuality == 1 ? 24 : (p.renderQuality == 3 ? 64 : 40));
 }
 
-float2 apertureSample(int i, int n) {
+float hash12(float2 p) {
+  float3 p3 = fract(float3(p.x, p.y, p.x) * 0.1031f);
+  p3 += dot(p3, p3.yzx + 33.33f);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float2 apertureSample(int i, int n, float2 pixelSeed) {
   float goldenAngle = 2.39996323f;
   float r = sqrt((float(i) + 0.5f) / max(1.0f, float(n)));
-  float theta = float(i) * goldenAngle;
+  float theta = float(i) * goldenAngle + hash12(pixelSeed) * 2.0f * kPi;
   return float2(cos(theta), sin(theta)) * r;
 }
 
@@ -684,7 +690,7 @@ float4 depthAwareOvalGather(const device PixelChannel *src,
       continue;
     }
 
-    float2 aperture = apertureSample(i, sampleCount);
+    float2 aperture = apertureSample(i, sampleCount, float2(x, y));
     aperture += edgeDir * cat * p.catEyeShift;
     aperture.x *= 1.0f + abs(edgeDir.x) * cat * p.catEyeCompression;
     aperture.y *= 1.0f + abs(edgeDir.y) * cat * p.catEyeCompression;
