@@ -686,48 +686,21 @@ float4 depthAwareOvalGather(const device PixelChannel *src,
   float2 edgeDir = edgeLen > 0.0001f ? screen / edgeLen : float2(0.0f, 0.0f);
   float cat = smoothstepf(p.catEyeStart, 1.0f, edgeLen) * p.catEyeAmount;
 
-  int sampleCount = cappedBokehSamples(p);
+  // TEST: Simple Gaussian blur - ignore aperture/rings/depth rejection
   float3 accumRgb = 0.0f;
   float accumAlpha = 0.0f;
   float weightSum = 0.0f;
-  for (int i = 0; i < 64; ++i) {
-    if (i >= sampleCount) {
-      continue;
+  
+  for (int j = -2; j <= 2; ++j) {
+    for (int i = -2; i <= 2; ++i) {
+      float2 o = float2(float(i), float(j));
+      float w = exp(-0.5f * dot(o, o) / 2.0f);
+      float4 s = sampleBilinearZero(src, info, x + o.x, y + o.y);
+      float alpha = clamp01(s.w);
+      accumRgb += s.xyz * alpha * w;
+      accumAlpha += alpha * w;
+      weightSum += w;
     }
-
-    float2 aperture = apertureSample(i, sampleCount);
-    aperture += edgeDir * cat * p.catEyeShift;
-    aperture.x *= 1.0f + abs(edgeDir.x) * cat * p.catEyeCompression;
-    aperture.y *= 1.0f + abs(edgeDir.y) * cat * p.catEyeCompression;
-    float r2 = dot(aperture, aperture);
-    float apertureWeight = apertureProfile(r2, p);
-    if (apertureWeight <= 0.0f) {
-      continue;
-    }
-
-    float2 offsetPx = float2(aperture.x * radiusX, aperture.y * radiusY);
-    if (angle != 0.0f) {
-      offsetPx = rotate2D(offsetPx, angle);
-    }
-
-    float sampleDepth = smoothedDepthAt(depth, info, p, x + offsetPx.x, y + offsetPx.y);
-    float depthWeight = bokehOcclusionWeight(centreDepth, sampleDepth, p);
-    float w = apertureWeight * depthWeight;
-    if (w <= 0.0f) {
-      continue;
-    }
-
-    float4 s = bokehSourceSample(src, info, p, x, y, offsetPx, highlightOnly);
-    float3 rgb = s.xyz;
-    if (highlightOnly) {
-      float h = highlightMask(s, p);
-      rgb = saturateBokeh(rgb * h, p.highlightSaturation);
-    }
-
-    float alpha = clamp01(s.w);
-    accumRgb += rgb * alpha * w;
-    accumAlpha += alpha * w;
-    weightSum += w;
   }
 
   if (weightSum <= 0.0f) {
