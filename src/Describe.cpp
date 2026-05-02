@@ -55,6 +55,7 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
 
   // Top-level panel sections.
   addPageParam(paramSet, "corePage", "Core");
+  addPageParam(paramSet, "bokehPage", "Depth Bokeh");
   addPageParam(paramSet, "geometryPage", "Geometry");
   addPageParam(paramSet, "highlightPage", "Highlights / Flares");
   addPageParam(paramSet, "edgePage", "Edge / CA");
@@ -62,6 +63,10 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
 
     // Collapsible groups.
     addGroupParam(paramSet, "coreGroup", "Core", true);
+    addGroupParam(paramSet, "bokehCoreGroup", "Core Bokeh", true);
+    addGroupParam(paramSet, "depthGroup", "Depth", true);
+    addGroupParam(paramSet, "bokehHighlightGroup", "Bokeh Highlights", false);
+    addGroupParam(paramSet, "bokehCharacterGroup", "Bokeh Character", false);
     addGroupParam(paramSet, "geometryGroup", "Geometry", true);
     addGroupParam(paramSet, "highlightsGroup", "Highlights / Flares", false);
     addGroupParam(paramSet, "edgeCaGroup", "Edge / CA", false);
@@ -90,7 +95,16 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
                   "Edge Mask",
                   "Metal Identity",
                   "Metal Bilinear",
-              "Metal Basic Geometry"},
+              "Metal Basic Geometry",
+              "Raw Depth",
+              "Normalised Depth",
+              "CoC Map",
+              "Near CoC",
+              "Far CoC",
+              "Focus Mask",
+              "Highlight Mask",
+              "Bokeh Layer Only",
+              "Composite Difference"},
               nullptr,
               "debugGroup");
   addChoiceParam(paramSet, "processingBackend", "Processing Backend", kBackendAuto,
@@ -152,6 +166,89 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
               nullptr, "highlightsGroup");
     addDoubleParam(paramSet, "bokehStretchScale", "Bloom Stretch Scale", 2.2, 0.0, 8.0, 0.0, 4.0,
               nullptr, "highlightsGroup");
+
+  // Depth-aware oval bokeh renderer.
+  addBooleanParam(paramSet, "enableBokeh", "Enable Bokeh", 0,
+                  "Enables depth-aware anamorphic defocus from the connected Depth clip.",
+                  "bokehCoreGroup");
+  addDoubleParam(paramSet, "bokehAmount", "Bokeh Amount", 0.45, 0.0, 1.0, 0.0, 1.0,
+                 nullptr, "bokehCoreGroup");
+  addDoubleParam(paramSet, "focusDistance", "Focus Depth", 0.5, 0.0, 1.0, 0.0, 1.0,
+                 nullptr, "bokehCoreGroup");
+  addDoubleParam(paramSet, "focusWidth", "Focus Width", 0.08, 0.0, 1.0, 0.0, 0.4,
+                 nullptr, "bokehCoreGroup");
+  addDoubleParam(paramSet, "focusFalloff", "Focus Falloff", 0.15, 0.0001, 1.0, 0.01, 0.5,
+                 nullptr, "bokehCoreGroup");
+  addDoubleParam(paramSet, "maxBokehRadius", "Max Radius", 18.0, 0.0, 80.0, 0.0, 40.0,
+                 nullptr, "bokehCoreGroup");
+  addDoubleParam(paramSet, "nearBlurAmount", "Near Blur Amount", 0.6, 0.0, 2.0, 0.0, 1.5,
+                 nullptr, "bokehCoreGroup");
+  addDoubleParam(paramSet, "farBlurAmount", "Far Blur Amount", 1.0, 0.0, 2.0, 0.0, 1.5,
+                 nullptr, "bokehCoreGroup");
+  addDoubleParam(paramSet, "ovalRatio", "Oval Ratio", 1.65, 1.0, 3.0, 1.0, 2.4,
+                 nullptr, "bokehCoreGroup");
+  addChoiceParam(paramSet, "ovalOrientation", "Oval Orientation", 0,
+                 {"Finished Anamorphic / Vertical", "Sensor Space / Horizontal", "Custom Angle"},
+                 nullptr, "bokehCoreGroup");
+  addDoubleParam(paramSet, "ovalAngle", "Oval Angle", 0.0, -180.0, 180.0, -90.0, 90.0,
+                 nullptr, "bokehCoreGroup");
+
+  addBooleanParam(paramSet, "enableDepthMap", "Enable Depth Map", 1,
+                  "Uses the connected Depth clip for focus separation and depth-aware bokeh.", "depthGroup");
+  addBooleanParam(paramSet, "invertDepth", "Invert Depth", 0,
+                  "Inverts the depth clip before normalisation. Internally 0 is near and 1 is far.",
+                  "depthGroup");
+  addDoubleParam(paramSet, "depthBlackPoint", "Depth Black Point", 0.0, 0.0, 1.0, 0.0, 0.5,
+                 nullptr, "depthGroup");
+  addDoubleParam(paramSet, "depthWhitePoint", "Depth White Point", 1.0, 0.0, 1.0, 0.5, 1.0,
+                 nullptr, "depthGroup");
+  addDoubleParam(paramSet, "depthGamma", "Depth Gamma", 1.0, 0.05, 8.0, 0.2, 3.0,
+                 nullptr, "depthGroup");
+  addIntParam(paramSet, "depthSmoothRadius", "Depth Smooth Radius", 1, 0, 2,
+              "Small edge-aware depth smoothing radius used before CoC generation.", "depthGroup");
+  addDoubleParam(paramSet, "depthEdgeProtect", "Depth Edge Protect", 8.0, 0.0, 40.0, 0.0, 20.0,
+                 nullptr, "depthGroup");
+  addDoubleParam(paramSet, "foregroundEdgeProtect", "Foreground Edge Protect", 12.0, 0.0, 60.0, 0.0, 30.0,
+                 nullptr, "depthGroup");
+  addDoubleParam(paramSet, "backgroundEdgeProtect", "Background Edge Protect", 6.0, 0.0, 60.0, 0.0, 30.0,
+                 nullptr, "depthGroup");
+  addDoubleParam(paramSet, "occlusionThreshold", "Occlusion Threshold", 0.015, 0.0, 0.25, 0.0, 0.08,
+                 nullptr, "depthGroup");
+
+  addBooleanParam(paramSet, "highlightBokehEnable", "Highlight Bokeh Enable", 1,
+                  "Adds a separate oval highlight bokeh layer on top of the base defocus.",
+                  "bokehHighlightGroup");
+  addDoubleParam(paramSet, "highlightThreshold", "Highlight Threshold", 0.75, 0.0, 8.0, 0.0, 2.0,
+                 nullptr, "bokehHighlightGroup");
+  addDoubleParam(paramSet, "highlightSoftness", "Highlight Softness", 0.35, 0.0001, 4.0, 0.01, 1.0,
+                 nullptr, "bokehHighlightGroup");
+  addDoubleParam(paramSet, "highlightGain", "Highlight Gain", 0.35, 0.0, 4.0, 0.0, 1.5,
+                 nullptr, "bokehHighlightGroup");
+  addDoubleParam(paramSet, "highlightRadiusMultiplier", "Highlight Radius Multiplier", 1.8, 0.1, 4.0, 0.5, 3.0,
+                 nullptr, "bokehHighlightGroup");
+  addDoubleParam(paramSet, "highlightSaturation", "Highlight Saturation", 1.0, 0.0, 2.0, 0.0, 1.5,
+                 nullptr, "bokehHighlightGroup");
+  addDoubleParam(paramSet, "highlightRolloff", "Highlight Roll-off", 0.2, 0.0, 4.0, 0.0, 1.0,
+                 nullptr, "bokehHighlightGroup");
+
+  addDoubleParam(paramSet, "apertureSoftness", "Aperture Softness", 0.08, 0.0, 0.95, 0.0, 0.4,
+                 nullptr, "bokehCharacterGroup");
+  addDoubleParam(paramSet, "rimBrightness", "Rim Brightness", 0.2, 0.0, 2.0, 0.0, 0.8,
+                 nullptr, "bokehCharacterGroup");
+  addDoubleParam(paramSet, "centreDensity", "Centre Density", 0.05, 0.0, 2.0, 0.0, 0.8,
+                 nullptr, "bokehCharacterGroup");
+  addBooleanParam(paramSet, "bokehCAEnable", "Bokeh CA Enable", 1, nullptr, "bokehCharacterGroup");
+  addDoubleParam(paramSet, "bokehCAAmount", "Bokeh CA Amount", 0.05, 0.0, 2.0, 0.0, 0.4,
+                 nullptr, "bokehCharacterGroup");
+  addDoubleParam(paramSet, "catEyeAmount", "Cat-eye Amount", 0.15, 0.0, 1.0, 0.0, 0.6,
+                 nullptr, "bokehCharacterGroup");
+  addDoubleParam(paramSet, "catEyeStart", "Cat-eye Start", 0.45, 0.0, 1.0, 0.2, 0.9,
+                 nullptr, "bokehCharacterGroup");
+  addDoubleParam(paramSet, "catEyeCompression", "Cat-eye Compression", 0.3, 0.0, 2.0, 0.0, 1.0,
+                 nullptr, "bokehCharacterGroup");
+  addDoubleParam(paramSet, "catEyeShift", "Cat-eye Shift", 0.15, 0.0, 1.0, 0.0, 0.5,
+                 nullptr, "bokehCharacterGroup");
+
     addDoubleParam(paramSet, "bloomPixelScale", "Bloom Pixel Scale", 80.0, 0.0, 300.0, 0.0, 160.0,
               nullptr, "highlightsGroup");
     addDoubleParam(paramSet, "bloomThresholdScale", "Bloom Threshold Scale", 0.75, 0.0, 2.0, 0.0, 1.2,
@@ -238,10 +335,6 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
               nullptr, "geometryGroup");
     addDoubleParam(paramSet, "faceWidthCompensation", "Face Width Compensation", 0.0, 0.0, 1.0, 0.0, 0.6,
               nullptr, "geometryGroup");
-    addBooleanParam(paramSet, "enableDepthMap", "Enable Depth Map", 1,
-              "Uses the connected Depth clip for focus separation and depth-aware bokeh.", "geometryGroup");
-    addDoubleParam(paramSet, "focusDistance", "Focus Distance", 0.5, 0.0, 1.0, 0.0, 1.0,
-              nullptr, "geometryGroup");
     addDoubleParam(paramSet, "breathingAmount", "Breathing Amount", 0.0, -1.0, 1.0, -0.5, 0.5,
               nullptr, "geometryGroup");
     addDoubleParam(paramSet, "mumpsScale", "Mumps Scale", 0.28, 0.0, 3.0, 0.0, 1.0,
@@ -319,6 +412,10 @@ OfxStatus describeInContext(OfxImageEffectHandle effect) {
   addPageChild(paramSet, "corePage", "coreGroup");
   addPageChild(paramSet, "corePage", "performanceGroup");
   addPageChild(paramSet, "corePage", "debugGroup");
+  addPageChild(paramSet, "bokehPage", "bokehCoreGroup");
+  addPageChild(paramSet, "bokehPage", "depthGroup");
+  addPageChild(paramSet, "bokehPage", "bokehHighlightGroup");
+  addPageChild(paramSet, "bokehPage", "bokehCharacterGroup");
   addPageChild(paramSet, "geometryPage", "geometryGroup");
   addPageChild(paramSet, "highlightPage", "highlightsGroup");
   addPageChild(paramSet, "edgePage", "edgeCaGroup");

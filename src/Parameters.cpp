@@ -179,6 +179,62 @@ RenderParams readParams(OfxImageEffectHandle effect, OfxTime time) {
       static_cast<float>(getDoubleParamAtTime(paramSet, "bokehEdgeFalloff", time, params.bokehEdgeFalloff));
   params.bokehStretchScale =
       static_cast<float>(getDoubleParamAtTime(paramSet, "bokehStretchScale", time, params.bokehStretchScale));
+  params.enableBokeh = getIntParamAtTime(paramSet, "enableBokeh", time, params.enableBokeh);
+  params.bokehAmount = static_cast<float>(getDoubleParamAtTime(paramSet, "bokehAmount", time, params.bokehAmount));
+  params.focusWidth = static_cast<float>(getDoubleParamAtTime(paramSet, "focusWidth", time, params.focusWidth));
+  params.focusFalloff = static_cast<float>(getDoubleParamAtTime(paramSet, "focusFalloff", time, params.focusFalloff));
+  params.maxBokehRadius =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "maxBokehRadius", time, params.maxBokehRadius));
+  params.nearBlurAmount =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "nearBlurAmount", time, params.nearBlurAmount));
+  params.farBlurAmount =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "farBlurAmount", time, params.farBlurAmount));
+  params.ovalRatio = static_cast<float>(getDoubleParamAtTime(paramSet, "ovalRatio", time, params.ovalRatio));
+  params.ovalOrientation = getIntParamAtTime(paramSet, "ovalOrientation", time, params.ovalOrientation);
+  params.ovalAngle = static_cast<float>(getDoubleParamAtTime(paramSet, "ovalAngle", time, params.ovalAngle));
+  params.invertDepth = getIntParamAtTime(paramSet, "invertDepth", time, params.invertDepth);
+  params.depthBlackPoint =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "depthBlackPoint", time, params.depthBlackPoint));
+  params.depthWhitePoint =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "depthWhitePoint", time, params.depthWhitePoint));
+  params.depthGamma = static_cast<float>(getDoubleParamAtTime(paramSet, "depthGamma", time, params.depthGamma));
+  params.depthSmoothRadius = getIntParamAtTime(paramSet, "depthSmoothRadius", time, params.depthSmoothRadius);
+  params.depthEdgeProtect =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "depthEdgeProtect", time, params.depthEdgeProtect));
+  params.foregroundEdgeProtect = static_cast<float>(
+      getDoubleParamAtTime(paramSet, "foregroundEdgeProtect", time, params.foregroundEdgeProtect));
+  params.backgroundEdgeProtect = static_cast<float>(
+      getDoubleParamAtTime(paramSet, "backgroundEdgeProtect", time, params.backgroundEdgeProtect));
+  params.occlusionThreshold =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "occlusionThreshold", time, params.occlusionThreshold));
+  params.highlightBokehEnable =
+      getIntParamAtTime(paramSet, "highlightBokehEnable", time, params.highlightBokehEnable);
+  params.highlightThreshold =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "highlightThreshold", time, params.highlightThreshold));
+  params.highlightSoftness =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "highlightSoftness", time, params.highlightSoftness));
+  params.highlightGain =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "highlightGain", time, params.highlightGain));
+  params.highlightRadiusMultiplier = static_cast<float>(
+      getDoubleParamAtTime(paramSet, "highlightRadiusMultiplier", time, params.highlightRadiusMultiplier));
+  params.highlightSaturation =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "highlightSaturation", time, params.highlightSaturation));
+  params.highlightRolloff =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "highlightRolloff", time, params.highlightRolloff));
+  params.apertureSoftness =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "apertureSoftness", time, params.apertureSoftness));
+  params.rimBrightness =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "rimBrightness", time, params.rimBrightness));
+  params.centreDensity =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "centreDensity", time, params.centreDensity));
+  params.bokehCAEnable = getIntParamAtTime(paramSet, "bokehCAEnable", time, params.bokehCAEnable);
+  params.bokehCAAmount =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "bokehCAAmount", time, params.bokehCAAmount));
+  params.catEyeAmount = static_cast<float>(getDoubleParamAtTime(paramSet, "catEyeAmount", time, params.catEyeAmount));
+  params.catEyeStart = static_cast<float>(getDoubleParamAtTime(paramSet, "catEyeStart", time, params.catEyeStart));
+  params.catEyeCompression =
+      static_cast<float>(getDoubleParamAtTime(paramSet, "catEyeCompression", time, params.catEyeCompression));
+  params.catEyeShift = static_cast<float>(getDoubleParamAtTime(paramSet, "catEyeShift", time, params.catEyeShift));
   params.bloomPixelScale = static_cast<float>(getDoubleParamAtTime(paramSet, "bloomPixelScale", time, params.bloomPixelScale));
   params.bloomThresholdScale =
       static_cast<float>(getDoubleParamAtTime(paramSet, "bloomThresholdScale", time, params.bloomThresholdScale));
