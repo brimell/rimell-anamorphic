@@ -592,11 +592,17 @@ float smoothedDepthAt(const device PixelChannel *depth, constant I &info, consta
 }
 
 CoCInfo computeCoC(float depthValue, constant P &p) {
+  depthValue = isfinite(depthValue) ? depthValue : clamp01(p.focusDistance);
+  float focus = clamp01(p.focusDistance);
+  float delta = depthValue - focus;
+  float nearAmount = delta < 0.0f ? smoothstepf(p.focusWidth, p.focusWidth + p.focusFalloff, -delta) : 0.0f;
+  float farAmount = delta > 0.0f ? smoothstepf(p.focusWidth, p.focusWidth + p.focusFalloff, delta) : 0.0f;
+  float maxRadius = isfinite(p.maxBokehRadius) ? max(0.0f, p.maxBokehRadius) : 0.0f;
   CoCInfo c;
-  c.nearValue = 0.0f;
-  c.farValue = 8.0f;
-  c.total = 8.0f;
-  c.focusMask = 1.0f;
+  c.nearValue = min(maxRadius, nearAmount * maxRadius * max(0.0f, p.nearBlurAmount));
+  c.farValue = min(maxRadius, farAmount * maxRadius * max(0.0f, p.farBlurAmount));
+  c.total = min(maxRadius, max(c.nearValue, c.farValue));
+  c.focusMask = clamp01(c.total / max(maxRadius, 0.00001f));
   return c;
 }
 
@@ -1191,16 +1197,6 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
   LocalMapping map = { spCenter, spDx, spDy, caDirection };
 
   float4 color = opticalBaseSample(src, info, p, float(x), float(y), map, depth);
-
-  // DEBUG_DEPTH
-  // float debug_depthValue = smoothedDepthAt(depth, info, p, float(x), float(y));
-  // return float4(debug_depthValue, debug_depthValue, debug_depthValue, 1.0f);
-
-  // DEBUG_COC
-  // CoCInfo debug_c = computeCoC(debug_depthValue, p);
-  // float debug_v = debug_c.total / max(p.maxBokehRadius, 0.0001f);
-  // return float4(debug_v, debug_v, debug_v, 1.0f);
-
   if (p.enableEdgeEffects != 0) {
     color = edgeCharacter(src, info, p, float(x), float(y), color, map, centerLm, depth);
   }
