@@ -558,6 +558,175 @@ float highlightMask(float4 color, constant P &p) {
   return smoothstepf(p.highlightThreshold, p.highlightThreshold + p.highlightSoftness, luma);
 }
 
+float2 rotate2D(float2 v, float radians) {
+  float s = sin(radians);
+  float c = cos(radians);
+  return float2(c * v.x - s * v.y, s * v.x + c * v.y);
+}
+
+int cappedBokehSamples(constant P &p) {
+  return p.renderQuality == 0 ? 16 : (p.renderQuality == 1 ? 24 : (p.renderQuality == 3 ? 64 : 40));
+}
+
+float2 apertureSample(int i, int n) {
+  float goldenAngle = 2.39996323f;
+  float r = sqrt((float(i) + 0.5f) / max(1.0f, float(n)));
+  float theta = float(i) * goldenAngle;
+  return float2(cos(theta), sin(theta)) * r;
+}
+
+float apertureProfile(float r2, constant P &p) {
+  if (r2 > 1.0f) {
+    return 0.0f;
+  }
+  float r = sqrt(max(0.0f, r2));
+  float softStart = max(0.0f, 1.0f - p.apertureSoftness);
+  float softEdge = 1.0f - smoothstepf(softStart, 1.0f, r);
+  float rim = smoothstepf(0.72f, 1.0f, r);
+  float centre = 1.0f - smoothstepf(0.0f, 1.0f, r);
+  return max(0.0f, (1.0f + rim * p.rimBrightness + centre * p.centreDensity) * softEdge);
+}
+
+float bokehOcclusionWeight(float centreDepth, float sampleDepth, constant P &p) {
+  float diff = sampleDepth - centreDepth;
+  if (diff > p.occlusionThreshold) {
+    return exp(-diff * p.foregroundEdgeProtect);
+  }
+  if (diff < -p.occlusionThreshold) {
+    return exp(diff * p.backgroundEdgeProtect);
+  }
+  return exp(-abs(diff) * p.depthEdgeProtect * 0.15f);
+}
+
+float4 bokehSourceSample(const device PixelChannel *src,
+                         constant I &info,
+                         constant P &p,
+                         LocalMapping map,
+                         float2 offsetPx,
+                         bool allowCA) {
+  if (!allowCA || p.bokehCAEnable == 0 || p.bokehCAAmount <= 0.0001f) {
+    return fastSourceSampleCA(src, info, p, map, offsetPx.x, offsetPx.y, 0.0f);
+  }
+
+  float len = length(offsetPx);
+  float2 dir = len > 0.0001f ? offsetPx / len : float2(1.0f, 0.0f);
+  float caPixels = p.bokehCAAmount * 4.0f;
+  float4 centre = fastSourceSampleCA(src, info, p, map, offsetPx.x, offsetPx.y, 0.0f);
+  float4 red = fastSourceSampleCA(src,
+                                  info,
+                                  p,
+                                  map,
+                                  offsetPx.x + dir.x * caPixels,
+                                  offsetPx.y + dir.y * caPixels,
+                                  0.0f);
+  float4 blue = fastSourceSampleCA(src,
+                                   info,
+                                   p,
+                                   map,
+                                   offsetPx.x - dir.x * caPixels,
+                                   offsetPx.y - dir.y * caPixels,
+                                   0.0f);
+  return float4(red.x, centre.y, blue.z, centre.w);
+}
+
+float3 saturateBokeh(float3 rgb, float amount) {
+  float l = dot(rgb, float3(0.2126f, 0.7152f, 0.0722f));
+  return mix(float3(l), rgb, amount);
+}
+
+float3 softClipBokeh(float3 x, float rolloff) {
+  return x / max(float3(0.00001f), float3(1.0f) + x * rolloff);
+}
+
+float4 depthAwareOvalGather(const device PixelChannel *src,
+                            const device PixelChannel *depth,
+                            constant I &info,
+                            constant P &p,
+                            LocalMapping map,
+                            float x,
+                            float y,
+                            float radius,
+                            float centreDepth,
+                            bool highlightOnly) {
+  if (radius < 0.35f) {
+    float4 s = fastSourceSampleCA(src, info, p, map, 0.0f, 0.0f, 0.0f);
+    if (highlightOnly) {
+      float h = highlightMask(s, p);
+      return float4(saturateBokeh(s.xyz * h, p.highlightSaturation), s.w);
+    }
+    return s;
+  }
+
+  float radiusX = radius;
+  float radiusY = radius * max(1.0f, p.ovalRatio);
+  float angle = 0.0f;
+  if (p.ovalOrientation == 1) {
+    radiusX = radius * max(1.0f, p.ovalRatio);
+    radiusY = radius;
+  } else if (p.ovalOrientation == 2) {
+    angle = p.ovalAngle * kPi / 180.0f;
+  }
+
+  float2 screen = float2((x - float(info.sourceX1)) / max(1.0f, float(info.width)),
+                         (y - float(info.sourceY1)) / max(1.0f, float(info.height))) *
+                  2.0f - 1.0f;
+  float edgeLen = length(screen);
+  float2 edgeDir = edgeLen > 0.0001f ? screen / edgeLen : float2(0.0f, 0.0f);
+  float cat = smoothstepf(p.catEyeStart, 1.0f, edgeLen) * p.catEyeAmount;
+
+  int sampleCount = cappedBokehSamples(p);
+  float3 accumRgb = 0.0f;
+  float accumAlpha = 0.0f;
+  float weightSum = 0.0f;
+  for (int i = 0; i < 64; ++i) {
+    if (i >= sampleCount) {
+      continue;
+    }
+
+    float2 aperture = apertureSample(i, sampleCount);
+    aperture += edgeDir * cat * p.catEyeShift;
+    aperture.x *= 1.0f + abs(edgeDir.x) * cat * p.catEyeCompression;
+    aperture.y *= 1.0f + abs(edgeDir.y) * cat * p.catEyeCompression;
+    float r2 = dot(aperture, aperture);
+    float apertureWeight = apertureProfile(r2, p);
+    if (apertureWeight <= 0.0f) {
+      continue;
+    }
+
+    float2 offsetPx = float2(aperture.x * radiusX, aperture.y * radiusY);
+    if (angle != 0.0f) {
+      offsetPx = rotate2D(offsetPx, angle);
+    }
+
+    float sampleDepth = smoothedDepthAt(depth, info, p, x + offsetPx.x, y + offsetPx.y);
+    float depthWeight = bokehOcclusionWeight(centreDepth, sampleDepth, p);
+    float w = apertureWeight * depthWeight;
+    if (w <= 0.0f) {
+      continue;
+    }
+
+    float4 s = bokehSourceSample(src, info, p, map, offsetPx, highlightOnly);
+    float3 rgb = s.xyz;
+    if (highlightOnly) {
+      float h = highlightMask(s, p);
+      rgb = saturateBokeh(rgb * h, p.highlightSaturation);
+    }
+
+    float alpha = clamp01(s.w);
+    accumRgb += rgb * alpha * w;
+    accumAlpha += alpha * w;
+    weightSum += w;
+  }
+
+  if (weightSum <= 0.0f) {
+    return float4(0.0f);
+  }
+
+  float outAlpha = accumAlpha / weightSum;
+  float3 outRgb = accumRgb / max(accumAlpha, 0.00001f);
+  return float4(outRgb, outAlpha);
+}
+
 int cappedEdgeBlurSamples(constant P &p) {
   return p.renderQuality == 0 ? 1 : (p.renderQuality == 1 ? 2 : (p.renderQuality == 3 ? 6 : 4));
 }
@@ -934,7 +1103,7 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
 
   float4 original = sampleNearest(src, info, float(x), float(y));
 
-  if (p.debugView != 0) {
+  if (p.debugView != 0 && p.debugView < 14) {
     float4 debugColor = original;
     if (p.debugView == 1) {
       debugColor = original;
@@ -1002,6 +1171,47 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
     color = edgeCharacter(src, info, p, float(x), float(y), color, map, centerLm, depth);
   }
   color = additionalBackgroundBlur(src, info, p, float(x), float(y), color, map, depth);
+  float3 bokehDebugLayer = 0.0f;
+  if (p.enableBokeh != 0 && p.enableDepthMap != 0 && info.hasDepth != 0 && p.maxBokehRadius > 0.001f) {
+    float centreDepth = smoothedDepthAt(depth, info, p, float(x), float(y));
+    CoCInfo coc = computeCoC(centreDepth, p);
+    float baseMask = coc.focusMask * p.bokehAmount;
+    if (baseMask > 0.0001f && coc.total > 0.35f) {
+      float4 baseBlur = depthAwareOvalGather(src,
+                                             depth,
+                                             info,
+                                             p,
+                                             map,
+                                             float(x),
+                                             float(y),
+                                             coc.total,
+                                             centreDepth,
+                                             false);
+      bokehDebugLayer += abs(baseBlur.xyz - color.xyz) * baseMask;
+      color.xyz = mix(color.xyz, baseBlur.xyz, baseMask);
+      color.w = original.w;
+    }
+
+    if (p.highlightBokehEnable != 0 && p.highlightGain > 0.0001f) {
+      float highlightRadius = coc.total * p.highlightRadiusMultiplier;
+      if (highlightRadius > 0.35f) {
+        float4 highlightBokeh = depthAwareOvalGather(src,
+                                                     depth,
+                                                     info,
+                                                     p,
+                                                     map,
+                                                     float(x),
+                                                     float(y),
+                                                     highlightRadius,
+                                                     centreDepth,
+                                                     true);
+        float3 highlightAdd = softClipBokeh(highlightBokeh.xyz * p.highlightGain, p.highlightRolloff);
+        highlightAdd *= p.bokehAmount;
+        color.xyz += highlightAdd;
+        bokehDebugLayer += highlightAdd;
+      }
+    }
+  }
   if (p.enableHighlightEffects != 0) {
     float4 add = lensAdditives(src, info, p, float(x), float(y), color, map, centerLm, depth);
     color.xyz += add.xyz;
@@ -1011,6 +1221,11 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
 
   float blend = clamp01(p.mix);
   float4 outPixel = lerp4(original, color, blend);
+  if (p.debugView == 14) {
+    outPixel = float4(bokehDebugLayer, original.w);
+  } else if (p.debugView == 15) {
+    outPixel = float4(abs(outPixel.xyz - original.xyz), original.w);
+  }
   outPixel = float4(finiteOr(outPixel.x, original.x),
                     finiteOr(outPixel.y, original.y),
                     finiteOr(outPixel.z, original.z),
