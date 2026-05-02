@@ -291,6 +291,26 @@ float sampleDepthBilinear(const device PixelChannel *depth, constant I &info, fl
   return mix(p0, p1, ty);
 }
 
+float2 mapSourceToDepth(float x, float y, constant I &info) {
+  float sx = (x - float(info.sourceX1)) /
+             max(1.0f, float(info.sourceX2 - info.sourceX1 - 1));
+  float sy = (y - float(info.sourceY1)) /
+             max(1.0f, float(info.sourceY2 - info.sourceY1 - 1));
+
+  float dx = float(info.depthX1) +
+             sx * float(info.depthX2 - info.depthX1 - 1);
+  float dy = float(info.depthY1) +
+             sy * float(info.depthY2 - info.depthY1 - 1);
+
+  return float2(dx, dy);
+}
+
+float rawDepthAt(const device PixelChannel *depth, constant I &info, float x, float y) {
+  if (info.hasDepth == 0) return 0.5f;
+  float2 dp = mapSourceToDepth(x, y, info);
+  return sampleDepthBilinear(depth, info, dp.x, dp.y);
+}
+
 float4 sampleBilinear(const device PixelChannel *src, constant I &info, float x, float y) {
   int x0 = int(floor(x));
   int y0 = int(floor(y));
@@ -529,7 +549,7 @@ float normalisedDepthAt(const device PixelChannel *depth, constant I &info, cons
   if (info.hasDepth == 0 || p.enableDepthMap == 0) {
     return clamp01(p.focusDistance);
   }
-  return normaliseDepthValue(sampleDepthBilinear(depth, info, x, y), p);
+  return normaliseDepthValue(rawDepthAt(depth, info, x, y), p);
 }
 
 float smoothedDepthAt(const device PixelChannel *depth, constant I &info, constant P &p, float x, float y) {
@@ -762,7 +782,7 @@ float4 opticalBaseSample(const device PixelChannel *src, constant I &info, const
     float nx = (x - cx) / max(1.0f, float(info.width) * 0.5f);
     float ny = (y - cy) / max(1.0f, float(info.height) * 0.5f);
     float edge = smoothstepf(0.15f, 1.05f, sqrt(nx * nx + ny * ny));
-    float depthValue = sampleDepthBilinear(depth, info, x, y);
+    float depthValue = rawDepthAt(depth, info, x, y);
     float focusBias = 0.35f + abs(p.focusDistance - depthValue) * 1.3f;
     float radiusPixels = p.longitudinalCA * focusBias * edge * 4.0f;
     float amount = clamp01(p.longitudinalCA * (0.35f + edge * 0.65f));
@@ -802,7 +822,7 @@ float4 edgeCharacter(const device PixelChannel *src, constant I &info, constant 
   float radius = max(lm.radius, sqrt(nx * nx + ny * ny));
   float edge = max(lm.edgeMask, smoothstepf(max(0.0f, 1.0f - p.radialFalloff), 1.15f, radius));
   float4 result = base;
-  float depthValue = sampleDepthBilinear(depth, info, x, y);
+  float depthValue = rawDepthAt(depth, info, x, y);
   float focusBias = 0.35f + abs(p.focusDistance - depthValue) * 1.3f;
   float blurRadius = p.edgeBlur * edge * focusBias * p.edgeBlurPixels + p.fieldCurvature * edge * p.fieldCurvaturePixels;
   if (blurRadius > 0.05f) {
@@ -855,7 +875,7 @@ float4 additionalBackgroundBlur(const device PixelChannel *src,
 
   float focusDelta = 0.0f;
   if (info.hasDepth != 0) {
-    float depthValue = sampleDepthBilinear(depth, info, x, y);
+    float depthValue = rawDepthAt(depth, info, x, y);
     focusDelta = abs(p.focusDistance - depthValue);
   }
 
@@ -931,7 +951,7 @@ float4 lensAdditives(const device PixelChannel *src, constant I &info, constant 
     return add;
   }
 
-  float depthValue = sampleDepthBilinear(depth, info, x, y);
+  float depthValue = rawDepthAt(depth, info, x, y);
   float focusBias = 0.35f + abs(p.focusDistance - depthValue) * 1.3f;
 
   int flareSteps = cappedFlareSteps(p);
@@ -1100,7 +1120,7 @@ kernel void RimellAnamorphicFloat(const device PixelChannel *src [[buffer(0)]],
       float e = edgeMaskAt(info, p, float(x), float(y));
       debugColor = float4(e, e, e, 1.0f);
     } else if (p.debugView == 7) {
-      float rawDepth = sampleDepthBilinear(depth, info, float(x), float(y));
+      float rawDepth = rawDepthAt(depth, info, float(x), float(y));
       debugColor = float4(rawDepth, rawDepth, rawDepth, 1.0f);
     } else if (p.debugView == 8) {
       float depthValue = smoothedDepthAt(depth, info, p, float(x), float(y));
