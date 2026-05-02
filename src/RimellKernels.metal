@@ -669,47 +669,19 @@ float4 depthAwareOvalGather(const device PixelChannel *src,
     return s;
   }
 
-  float radiusX = radius;
-  float radiusY = radius * max(1.0f, p.ovalRatio);
-  float angle = 0.0f;
-  if (p.ovalOrientation == 1) {
-    radiusX = radius * max(1.0f, p.ovalRatio);
-    radiusY = radius;
-  } else if (p.ovalOrientation == 2) {
-    angle = p.ovalAngle * kPi / 180.0f;
-  }
-
-  float2 screen = float2((x - float(info.sourceX1)) / max(1.0f, float(info.width)),
-                         (y - float(info.sourceY1)) / max(1.0f, float(info.height))) *
-                  2.0f - 1.0f;
-  float edgeLen = length(screen);
-  float2 edgeDir = edgeLen > 0.0001f ? screen / edgeLen : float2(0.0f, 0.0f);
-  float cat = smoothstepf(p.catEyeStart, 1.0f, edgeLen) * p.catEyeAmount;
-
-  // TEST: Simple Gaussian blur - ignore aperture/rings/depth rejection
-  float3 accumRgb = 0.0f;
-  float accumAlpha = 0.0f;
+  float4 acc = float4(0.0f);
   float weightSum = 0.0f;
-  
+
   for (int j = -2; j <= 2; ++j) {
     for (int i = -2; i <= 2; ++i) {
       float2 o = float2(float(i), float(j));
       float w = exp(-0.5f * dot(o, o) / 2.0f);
-      float4 s = sampleBilinearZero(src, info, x + o.x, y + o.y);
-      float alpha = clamp01(s.w);
-      accumRgb += s.xyz * alpha * w;
-      accumAlpha += alpha * w;
+      acc += sampleBilinearZero(src, info, x + o.x, y + o.y) * w;
       weightSum += w;
     }
   }
 
-  if (weightSum <= 0.0f) {
-    return float4(0.0f);
-  }
-
-  float outAlpha = accumAlpha / weightSum;
-  float3 outRgb = accumRgb / max(accumAlpha, 0.00001f);
-  return float4(outRgb, outAlpha);
+  return acc / max(weightSum, 1e-6f);
 }
 
 int cappedEdgeBlurSamples(constant P &p) {
